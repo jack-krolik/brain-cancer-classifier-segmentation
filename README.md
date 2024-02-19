@@ -12,4 +12,4 @@ pip install kaggle
 #### Step 2: Kaggle API Authentication
 Follow the Kaggle API authentication instructions to set up your Kaggle API credentials: [Kaggle API Authentication Documentation](https://www.kaggle.com/docs/api).
 #### Step 3: Run the Notebook
-Open the load_dataset.ipynb notebook in Jupyter and follow the steps inside to download your datasets.
+Open the load_dataset.ipynb notebook in Jupyter and follow the steps inside to download your datasets. Datasets will be downloaded to `./datasets` folder, which is already gitignored.
