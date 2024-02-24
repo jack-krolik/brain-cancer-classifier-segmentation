@@ -1,6 +1,10 @@
 kaggle
-matplotlib
 numpy
 scikit-learn
 scipy
 tqdm
+torch
+torchvision
+Pillow
+matplotlib
+jupyter
