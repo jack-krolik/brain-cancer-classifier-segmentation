@@ -1,15 +1,23 @@
-# brain-cancer-classifier-segmentation
+# Brain Cancer Classifier and Segmentation
 
+## Setup Instructions
 
-# Loading Datasets:
-### Setup Instructions
-#### Step 1: Install Kaggle API
-Run the following command to install the Kaggle API:
+### Step 1: Install Dependencies
+
+Install the necessary Python packages using the requirements.txt file:
 
 ```bash
-pip install kaggle
+pip install -r requirements.txt
 ```
-#### Step 2: Kaggle API Authentication
-Follow the Kaggle API authentication instructions to set up your Kaggle API credentials: [Kaggle API Authentication Documentation](https://www.kaggle.com/docs/api).
-#### Step 3: Run the Notebook
-Open the load_dataset.ipynb notebook in Jupyter and follow the steps inside to download your datasets. Datasets will be downloaded to `./datasets` folder, which is already gitignored.
+
+### Step 2: Kaggle API Authentication
+
+Follow the instructions to set up your Kaggle API credentials. You can find the Kaggle API authentication instructions in the [Kaggle API Documentation](https://www.kaggle.com/docs/api).
+
+### Step 3: Download Datasets
+
+Refer to the `notebooks/downloading_datasets.ipynb` notebook for step-by-step instructions on using the Kaggle API to download the datasets required for this project. The datasets will be downloaded to the `./datasets` folder, which is configured to be ignored by git.
+
+## Loading Classification Dataset
+
+For an example of how to load the classification dataset, see the `notebooks/dataloader_example.ipynb` notebook. This notebook demonstrates how to use the `TumorClassificationDataset` class to load either the Training or Testing split from the [Tumor Classification Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset).
