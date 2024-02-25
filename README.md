@@ -1,5 +1,12 @@
 # Brain Cancer Classifier and Segmentation
 
+## Datasets
+
+The datasets used in this project are available on Kaggle:
+
+-   [Brain Tumor Image DataSet: Semantic Segmentation](https://www.kaggle.com/datasets/pkdarabi/brain-tumor-image-dataset-semantic-segmentation)
+-   [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset)
+
 ## Setup Instructions
 
 ### Step 1: Install Dependencies
