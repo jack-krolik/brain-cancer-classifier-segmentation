@@ -10,6 +10,13 @@ Install the necessary Python packages using the requirements.txt file:
 pip install -r requirements.txt
 ```
 
+Alternatively, you can create a conda environment using the following commands:
+
+```bash
+conda env create -f environment.yaml
+conda activate ai_project_env
+```
+
 ### Step 2: Kaggle API Authentication
 
 Follow the instructions to set up your Kaggle API credentials. You can find the Kaggle API authentication instructions in the [Kaggle API Documentation](https://www.kaggle.com/docs/api).
