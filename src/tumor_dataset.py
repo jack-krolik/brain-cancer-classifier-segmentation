@@ -1,6 +1,10 @@
 import os
+import torch
+import json
+import numpy as np
 from PIL import Image, ImageDraw
 from torch.utils.data import Dataset
+
 from enums import DataSplit
 
 class TumorClassificationDataset(Dataset):
@@ -37,7 +41,7 @@ class TumorSemanticSegmentationDataset(Dataset):
         self.root_dir = os.path.join(root_dir, 'tumor-segmentation', split.lower())
         self.transform = transform
          # Load annotations
-        with open(os.path.join(root_dir, '_annotations.coco.json'), 'r') as file:
+        with open(os.path.join(self.root_dir, '_annotations.coco.json'), 'r') as file:
             self.labels = json.load(file)
 
         # Map image IDs to file names
@@ -48,7 +52,7 @@ class TumorSemanticSegmentationDataset(Dataset):
         for annotation in self.labels['annotations']:
             image_id = annotation['image_id']
             # TODO: may need iscrowd field (not sure what it is)
-            self.image_id_to_annotation[image_id] = {'bbox': np.array(annotation['bbox']), 'segmentation': np.array(annotation['segmentation']).reshape(-1, 2)}
+            self.image_id_to_annotation[image_id] = {'bbox': np.array(annotation['bbox']), 'segmentation':  annotation['segmentation'][0]}
 
 
         self.image_ids = list(self.image_id_to_file_name.keys())
@@ -70,13 +74,10 @@ class TumorSemanticSegmentationDataset(Dataset):
         if self.transform:
             image = self.transform(image)
             mask = self.transform(mask)
-        
         return image, mask
     
     def _create_mask(self, annotation, image_size):
-        mask = Image.new('L', image_size)
-        for seg in annotation['segmentation']:
-            ImageDraw.Draw(mask).polygon(seg.tolist(), outline=1, fill=1)
-        mask = torch.tensor(np.array(mask), dtype=torch.float32)
+        mask = Image.new('L', image_size, 0)
+        ImageDraw.Draw(mask).polygon(annotation['segmentation'], outline=255, fill=255)
         return mask
             
