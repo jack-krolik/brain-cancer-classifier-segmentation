@@ -24,6 +24,20 @@ conda env create -f environment.yaml
 conda activate ai_project_env
 ```
 
+### Setting Up Pre-commit Hooks
+
+Our project uses pre-commit hooks to ensure the cleanliness and consistency of Jupyter notebooks by automatically stripping outputs before they are committed. This step helps maintain a clean git history and minimizes "diff noise."
+
+After installing the project dependencies, activate the pre-commit hooks by running the following command:
+
+```bash
+pre-commit install
+```
+
+This command sets up the hooks based on our project's .pre-commit-config.yaml configuration and needs to be run only once.
+
+This current hook cleans the Jupyter notebooks before they are committed.
+
 ### Step 2: Kaggle API Authentication
 
 Follow the instructions to set up your Kaggle API credentials. You can find the Kaggle API authentication instructions in the [Kaggle API Documentation](https://www.kaggle.com/docs/api).
