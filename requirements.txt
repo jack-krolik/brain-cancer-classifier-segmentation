@@ -8,3 +8,5 @@ torchvision
 Pillow
 matplotlib
 jupyter
+nbconvert
+pre-commit
