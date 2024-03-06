@@ -15,7 +15,7 @@ def show_images_with_masks(images: list, masks: list, nmax: int = 4) -> None:
     Returns:
     - None
     """
-    n_rows = (min(len(images), nmax) + 1)  # Adjust for maximum display limit and ensure rounding up
+    n_rows = (min(len(images), nmax))  # Adjust for maximum display limit and ensure rounding up
     fig, axs = plt.subplots(n_rows, 3, figsize=(10, n_rows * 3))  # Adjust figsize as needed
     axs = axs.flatten()
 
