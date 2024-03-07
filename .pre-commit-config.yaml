@@ -3,6 +3,6 @@ repos:
       hooks:
           - id: clean-jupyter
             name: Clean Jupyter Notebooks
-            entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
-            language: system
-            files: \.ipynb$
+            entry: ./scripts/clean_staged_notebooks.sh
+            language: script
+            pass_filenames: false
