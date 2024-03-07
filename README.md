@@ -24,7 +24,7 @@ conda env create -f environment.yaml
 conda activate ai_project_env
 ```
 
-### Setting Up Pre-commit Hooks
+### Step 2: Setting Up Pre-commit Hooks
 
 Our project uses pre-commit hooks to ensure the cleanliness and consistency of Jupyter notebooks by automatically stripping outputs before they are committed. This step helps maintain a clean git history and minimizes "diff noise."
 
@@ -38,11 +38,11 @@ This command sets up the hooks based on our project's .pre-commit-config.yaml co
 
 This current hook cleans the Jupyter notebooks before they are committed.
 
-### Step 2: Kaggle API Authentication
+### Step 3: Kaggle API Authentication
 
 Follow the instructions to set up your Kaggle API credentials. You can find the Kaggle API authentication instructions in the [Kaggle API Documentation](https://www.kaggle.com/docs/api).
 
-### Step 3: Download Datasets
+### Step 4: Download Datasets
 
 Refer to the `notebooks/downloading_datasets.ipynb` notebook for step-by-step instructions on using the Kaggle API to download the datasets required for this project. The datasets will be downloaded to the `./datasets` folder, which is configured to be ignored by git.
 
