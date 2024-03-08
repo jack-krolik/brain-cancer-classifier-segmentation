@@ -3,7 +3,7 @@
 
 import torch
 from torch import nn
-from src.validators import validate_input_shape
+from src.utils.validators import validate_model_input
 
 
 class UNet(nn.Module):
@@ -32,8 +32,8 @@ class UNet(nn.Module):
         # TODO - double check the output layer
         self.output = nn.Conv2d(in_channels=64, out_channels=2, kernel_size=1, padding='valid') # TODO: double check on the padding
     
-    @validate_input_shape({
-        'shape': (3, 320, 320),
+    @validate_model_input({
+        'shape': (3, 320, 320), #TODO: might need to check self.in_channels instead of assuming 3
         'dims': 4,
         'dtype': torch.float32,
         'device': None # ignore the device for now
@@ -42,7 +42,7 @@ class UNet(nn.Module):
         """
         Forward pass through the UNet model.
 
-        Note: Original paper uses 570x570 images, but this model will most likely use 256x256 images.
+        Note: Original paper uses 570x570 images, but this model will most likely use 320x320 images.
         320x320 is chosen as it won't cause rounding after maxpooling and is simply half of 640x640 (the dataset's original size).
         """
 
