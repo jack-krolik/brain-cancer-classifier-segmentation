@@ -3,27 +3,8 @@
 
 import torch
 from torch import nn
-from functools import wraps
+from src.validators import validate_input_shape
 
-# TODO: move this to utils
-def validate_input_shape(expected_shape: tuple):
-    """
-    Decorator to validate the input shape of a tensor.
-
-    Args:
-        expected_shape (tuple): The expected shape of the input tensor.
-    """
-    
-    def decorator(func):
-        @wraps(func)
-        def wrapper(self, x, *args, **kwargs):
-            if not isinstance(x, torch.Tensor):
-                raise TypeError("Input must be a torch.Tensor")
-            if x.shape[1:] != expected_shape:  # Assuming x.shape[0] is the batch size
-                raise ValueError(f"Input tensor must have shape {expected_shape}, but got {x.shape[1:]}")
-            return func(self, x, *args, **kwargs)
-        return wrapper
-    return decorator
 
 class UNet(nn.Module):
     def __init__(self):
@@ -51,8 +32,12 @@ class UNet(nn.Module):
         # TODO - double check the output layer
         self.output = nn.Conv2d(in_channels=64, out_channels=2, kernel_size=1, padding='valid') # TODO: double check on the padding
     
-    # ensure x dimensions are Nx3x320x320
-    @validate_input_shape((3, 320, 320)) # ignore the batch size
+    @validate_input_shape({
+        'shape': (3, 320, 320),
+        'dims': 4,
+        'dtype': torch.float32,
+        'device': None # ignore the device for now
+    })
     def forward(self, x):
         """
         Forward pass through the UNet model.
