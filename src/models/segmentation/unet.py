@@ -54,7 +54,7 @@ class UNet(nn.Module):
 
         # Output Layer
         # TODO - double check the output layer
-        self.output = nn.Conv2d(in_channels=64, out_channels=2, kernel_size=1, padding='valid') # TODO: double check on the padding
+        self.output = nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, padding='valid') # TODO: double check on the padding
 
         self._init_weights()
     
@@ -98,14 +98,9 @@ class UNet(nn.Module):
         dec_4 = self.dec_conv_block_4(skip_4)  # Input shape is 128x320x320 -> 64x320x320
 
         # Output Layer
-        output = self.output(dec_4) # Input shape is 64x320x320 -> 2x320x320
-        # NOTE: output currently has 2 channels which implies a binary classification problem.
-
-        # softmax activation function over the channel dimension
-        channel_dim = 1 if len(output.shape) == 4 else 0
-        softmaxed_output = F.softmax(output, dim=channel_dim)
-
-        return softmaxed_output
+        # NOTE: this output layer assumes we have 2 classes (tumor and background) and that our loss criterion will handle the sigmoid activation
+        # Further NOTE: this is under the assumption `BCEWithLogitsLoss` is used as the loss function which applies the sigmoid activation before the BCE loss
+        return self.output(dec_4) # Input shape is 64x320x320 -> 1x320x320
     
     def _skip_connection(self, decode_component, encode_component):
         """
@@ -180,8 +175,8 @@ class UNetConvBlock(nn.Module):
         # However, the original paper also uses strict 570x570 images, but this model will most likely use 268x268 images. 
         # padding='same' will ensure cleaner skip connections and output shapes. 
         # NOTE: padding='same' may also introduce artifacts at the edges of the images, this should be investigated further.
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels1, kernel_size=kernel_size, padding='same')# TODO: double check on the padding 
-        self.conv2 = nn.Conv2d(in_channels=out_channels1, out_channels=out_channels2, kernel_size=kernel_size, padding='same')
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels1, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check on the padding 
+        self.conv2 = nn.Conv2d(in_channels=out_channels1, out_channels=out_channels2, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check about bias
 
         # TODO: might need to do a BatchNorm before the ReLU
 
