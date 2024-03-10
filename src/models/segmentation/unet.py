@@ -3,10 +3,13 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from src.utils.validators import validate_model_input
 
 
 class UNet(nn.Module):
+    # TODO: need to ask for input channels and output channels for the output layer
+    # TODO: need to determine if intermediate layers should be affected by input in_channels and output out_channels
     def __init__(self):
         super(UNet, self).__init__()
 
@@ -49,35 +52,39 @@ class UNet(nn.Module):
         """
 
         # Encoder Block
-        enc_1 = self.enc_conv_block_1(x) # Input shape is 320x320x3 -> 320x320x64 
-        down_sample_1 = self.max_pool(enc_1) # Input shape is 320x320x64 -> 160x160x64
-        enc_2 = self.enc_conv_block_2(down_sample_1) # Input shape is 160x160x64 -> 160x160x64
-        down_sample_2 = self.max_pool(enc_2) # Input shape is 160x160x64 -> 80x80x128
-        enc_3 = self.enc_conv_block_3(down_sample_2) # Input shape is 80x80x128 -> 80x80x256
-        down_sample_3 = self.max_pool(enc_3) # Input shape is 80x80x256 -> 40x40x256
-        enc_4 = self.enc_conv_block_4(down_sample_3) # Input shape is 40x40x256 -> 40x40x512
-        down_sample_4 = self.max_pool(enc_4) # Input shape is 40x40x512 -> 20x20x512
-        encoding = self.enc_conv_block_5(down_sample_4) # Input shape is 20x20x512 -> 20x20x1024
+        enc_1 = self.enc_conv_block_1(x) # Input shape is 3x320x320 -> 64x320x320
+        down_sample_1 = self.max_pool(enc_1) # Input shape is 64x320x320 -> 64x160x160
+        enc_2 = self.enc_conv_block_2(down_sample_1) # Input shape is 64x160x160 -> 128x160x160
+        down_sample_2 = self.max_pool(enc_2) # Input shape is 128x160x160 -> 128x80x80
+        enc_3 = self.enc_conv_block_3(down_sample_2) # Input shape is 128x80x80 -> 256x80x80
+        down_sample_3 = self.max_pool(enc_3) # Input shape is 256x80x80 -> 256x40x40
+        enc_4 = self.enc_conv_block_4(down_sample_3) # Input shape is 256x40x40 -> 512x40x40
+        down_sample_4 = self.max_pool(enc_4) # Input shape is 512x40x40 -> 512x20x20
+        encoding = self.enc_conv_block_5(down_sample_4) # Input shape is 512x20x20 -> 1024x20x20
 
         # Decoder Block
-        up_sample_1 = self.upconv_1(encoding) # Input shape is 20x20x1024 -> 40x40x512
-        skip_1 = self._skip_connection(up_sample_1, enc_4) # Concatenate (40x40x512, 40x40x512) -> 40x40x1024
-        dec_1 = self.dec_conv_block_1(skip_1) # Input shape is 40x40x1024 -> 40x40x512
-        up_sample_2 = self.upconv_2(dec_1)  # Input shape is 40x40x512 -> 80x80x256
-        skip_2 = self._skip_connection(up_sample_2, enc_3)  # Concatenate (80x80x256, 80x80x256) -> 80x80x512
-        dec_2 = self.dec_conv_block_2(skip_2)  # Input shape is 80x80x512 -> 80x80x256
-        up_sample_3 = self.upconv_3(dec_2) # Input shape is 80x80x256 -> 160x160x128
-        skip_3 = self._skip_connection(up_sample_3, enc_2) # Concatenate (160x160x128, 160x160x128) -> 160x160x256
-        dec_3 = self.dec_conv_block_3(skip_3) # Input shape is 160x160x256 -> 160x160x128
-        up_sample_4 = self.upconv_4(dec_3) # Input shape is 160x160x128 -> 320x320x64
-        skip_4 = self._skip_connection(up_sample_4, enc_1) # Concatenate (320x320x64, 320x320x64) -> 320x320x128
-        dec_4 = self.dec_conv_block_4(skip_4)  # Input shape is 320x320x128 -> 320x320x64
+        up_sample_1 = self.upconv_1(encoding) # Input shape is 1024x20x20 -> 512x40x40
+        skip_1 = self._skip_connection(up_sample_1, enc_4) # Concatenate (512x40x40, 512x40x40) -> 1024x40x40
+        dec_1 = self.dec_conv_block_1(skip_1) # Input shape is 1024x40x40 -> 512x40x40
+        up_sample_2 = self.upconv_2(dec_1)  # Input shape is 512x40x40 -> 256x80x80
+        skip_2 = self._skip_connection(up_sample_2, enc_3)  # Concatenate (256x80x80, 256x80x80) -> 512x80x80
+        dec_2 = self.dec_conv_block_2(skip_2)  # Input shape is 512x80x80 -> 256x80x80
+        up_sample_3 = self.upconv_3(dec_2) # Input shape is 256x80x80 -> 128x160x160
+        skip_3 = self._skip_connection(up_sample_3, enc_2) # Concatenate (128x160x160, 128x160x160) -> 256x160x160
+        dec_3 = self.dec_conv_block_3(skip_3) # Input shape is 256x160x160 -> 128x160x160
+        up_sample_4 = self.upconv_4(dec_3) # Input shape is 128x160x160 -> 64x320x320
+        skip_4 = self._skip_connection(up_sample_4, enc_1) # Concatenate (64x320x320, 64x320x320) -> 128x320x320
+        dec_4 = self.dec_conv_block_4(skip_4)  # Input shape is 128x320x320 -> 64x320x320
 
         # Output Layer
-        output = self.output(dec_4) # Input shape is 320x320x64 -> 320x320x2 TODO: determine if this is the correct output shape
-        # specify, should the output be 320x320x2 or 320x320x1
+        output = self.output(dec_4) # Input shape is 64x320x320 -> 2x320x320
+        # NOTE: output currently has 2 channels which implies a binary classification problem.
 
-        return output
+        # softmax activation function over the channel dimension
+        channel_dim = 1 if len(output.shape) == 4 else 0
+        softmaxed_output = F.softmax(output, dim=channel_dim)
+
+        return softmaxed_output
     
     def _skip_connection(self, decode_component, encode_component):
         """
@@ -154,6 +161,8 @@ class UNetConvBlock(nn.Module):
         # NOTE: padding='same' may also introduce artifacts at the edges of the images, this should be investigated further.
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels1, kernel_size=kernel_size, padding='same')# TODO: double check on the padding 
         self.conv2 = nn.Conv2d(in_channels=out_channels1, out_channels=out_channels2, kernel_size=kernel_size, padding='same')
+
+        # TODO: might need to do a BatchNorm before the ReLU
 
         self.relu = nn.ReLU(inplace=True)
 
