@@ -64,7 +64,10 @@ def main():
         summary(model, input_size=(batch_size, 3, 320, 320))
 
         # TODO: Verify best optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        # NOTE: Adam seems to perform worse in image classification tasks, then SGD
+        # NOTE: UNet paper uses SGD with momentum = 0.99 (this may be a good starting point for hyperparameter tuning)
+        # NOTE: do we need a scheduler to adjust learning rate?
+        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.99)
 
         # TODO: Verify best loss function (UNet paper uses cross-entropy loss)
         # NOTE: UNet uses cross-entropy loss maybe we should use BCEWithLogitsLoss here
