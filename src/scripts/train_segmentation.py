@@ -1,10 +1,11 @@
-from torch import nn
+import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 import torchvision.transforms as transforms
 from sklearn.model_selection import KFold
 from torchinfo import summary
 import argparse
 import os
+from tqdm import tqdm
 
 from src.models.segmentation.unet import UNet
 from src.tumor_dataset import TumorSemanticSegmentationDataset
@@ -58,18 +59,23 @@ def main():
         train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler)
         val_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=val_sampler) 
 
-        # TODO: Verify best optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-        # TODO: Verify best loss function (UNet paper uses cross-entropy loss)
-        loss_fn = nn.CrossEntropyLoss()
-
         # Create a UNet model to train on this fold
         model = UNet()
         summary(model, input_size=(batch_size, 3, 320, 320))
 
-        # TODO: Add optimizer and loss function
-        for epoch in range(epochs):
+        # TODO: Verify best optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+        # TODO: Verify best loss function (UNet paper uses cross-entropy loss)
+        # NOTE: UNet uses cross-entropy loss maybe we should use BCEWithLogitsLoss here
+        # NOTE: UNet also introduces pre-computed weights for the loss function to handle class imbalance
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        # Train the model
+        model.train()
+        cumalative_loss = 0
+
+        for epoch in tqdm(total=epochs):
             print(f'Epoch {epoch}')
             print('---------------------------')
             
@@ -77,14 +83,27 @@ def main():
             imgs, masks = next(iter(train_dataloader))
             show_images_with_masks(imgs, masks, nmax=batch_size)
 
+            model.zero_grad()
+            output = model(imgs)
+            loss = loss_fn(output, masks)
+            loss.backward()
+            optimizer.step()
+            cumalative_loss += loss.item()
+            print(f'Loss: {loss.item()}')
+            
             assert False, 'stop here'
-
         
+        # Validate the model
+        model.eval()
+        cumalative_loss = 0
+        with torch.no_grad():
+            for imgs, masks in val_dataloader:
+                output = model(imgs)
+                loss = loss_fn(output, masks)
+                cumalative_loss += loss.item()
+        
+        print(f'Validation Loss: {cumalative_loss / len(val_dataloader)}')
 
-
-
-
-     
 
 
 if __name__ == '__main__':
