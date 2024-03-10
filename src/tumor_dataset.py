@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from torch.utils.data import Dataset
 
-from enums import DataSplit
+from src.enums import DataSplit
 
 class TumorClassificationDataset(Dataset):
     def __init__(self, root_dir, split: DataSplit, transform=None):
