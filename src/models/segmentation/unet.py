@@ -1,10 +1,31 @@
 # Implementation of the U-Net model inspired by the original paper: https://arxiv.org/pdf/1505.04597.pdf
 # The model is implemented using the PyTorch framework.
 
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from typing import Union
+
 from src.utils.validators import validate_model_input
+
+def init_conv_weights(m: Union[nn.Conv2d, nn.ConvTranspose2d]) -> None:
+    """
+    Initialize the weights of the convolutional layer.
+
+    I follow the initialization scheme used in the original U-Net paper. 
+    Moreover, each conv param ~ N(0, sqrt(2/(kernel_size*kernel_size*in_channels)))
+
+    Args:
+        m (nn._ConvNd): The convolutional layer to initialize the weights for.
+    """
+    in_channels = m.in_channels
+    kernel_size = m.kernel_size[0]
+
+    # calculate the standard deviation for the normal distribution
+    std = np.sqrt(2/(in_channels * kernel_size * kernel_size))
+    # initialize the weights
+    nn.init.normal_(m.weight, std=std)
 
 
 class UNet(nn.Module):
@@ -131,7 +152,7 @@ class UNet(nn.Module):
             if type(m) == nn.Conv2d or type(m) == nn.ConvTranspose2d:
                 nn.init.normal_(m.weight, std=m.in_channels * m.kernel_size[0] * m.kernel_size[1])
 
-        # all conv layers
+        # # all conv layers
         self.dec_conv_block_1._init_weights()
         self.dec_conv_block_2._init_weights()
         self.dec_conv_block_3._init_weights()
@@ -143,10 +164,10 @@ class UNet(nn.Module):
         self.enc_conv_block_5._init_weights()
 
         # all upconv layers
-        init_weights(self.upconv_1)
-        init_weights(self.upconv_2)
-        init_weights(self.upconv_3)
-        init_weights(self.upconv_4)
+        init_conv_weights(self.upconv_1)
+        init_conv_weights(self.upconv_2)
+        init_conv_weights(self.upconv_3)
+        init_conv_weights(self.upconv_4)
     
 
 class UNetConvBlock(nn.Module):
@@ -164,22 +185,18 @@ class UNetConvBlock(nn.Module):
 
         # TODO: might need to do a BatchNorm before the ReLU
 
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.conv1(x)
-        self.relu(x)
+        x = self.relu(x)
         x = self.conv2(x)
-        self.relu(x)
+        x = self.relu(x)
         return x
     
     def _init_weights(self):
         """
         Initialize the weights of the model. 
-        I follow the initialization scheme used in the original U-Net paper. 
-        Moreover, each conv param ~ N(0, sqrt(2/(kernel_size*kernel_size*in_channels)))
         """
-
-        # all conv layers
-        nn.init.normal_(self.conv1.weight, std=self.conv1.in_channels * self.conv1.kernel_size[0] * self.conv1.kernel_size[1])
-        nn.init.normal_(self.conv2.weight, std=self.conv2.in_channels * self.conv2.kernel_size[0] * self.conv2.kernel_size[1])
+        init_conv_weights(self.conv1)
+        init_conv_weights(self.conv2)
