@@ -59,6 +59,11 @@ class TumorSemanticSegmentationDataset(Dataset):
                 self.image_id_to_annotation[image_id] = [annotation]
 
 
+        # THIS IS BAD, but THE DATASET IS ALSO BAD
+        INCORRECTLY_ANNOTATED_IMAGES = {1380}
+        for image_id in INCORRECTLY_ANNOTATED_IMAGES:
+            del self.image_id_to_file_name[image_id]
+        
         self.image_ids = list(self.image_id_to_file_name.keys())
 
 
