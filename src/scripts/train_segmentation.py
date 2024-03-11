@@ -1,17 +1,19 @@
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
-import torchvision.transforms as transforms
+from torchvision import transforms
 from sklearn.model_selection import KFold
 from torchinfo import summary
 from tqdm import trange, tqdm
 import argparse
-import os
+import pathlib
 from dataclasses import dataclass, field
 torch.set_printoptions(precision=3)
 
 from src.models.segmentation.unet import UNet
 from src.tumor_dataset import TumorSemanticSegmentationDataset
 from src.utils.visualize import show_images_with_masks
+from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
+
 
 """
 Key Notes for Later Improvements / Implementations Details:
@@ -22,7 +24,7 @@ Key Notes for Later Improvements / Implementations Details:
 - NOTE: Main benefit of BCEWithLogitsLoss is that it is numerically stable because it uses the log-sum-exp trick
 """
 
-DATASET_ROOT_DIR = 'src/../datasets'
+DATASET_BASE_DIR = pathlib.Path(__file__).parent.parent.parent / 'datasets'
 
 def get_device():
     """
@@ -41,7 +43,7 @@ class TrainingConfig:
     learning_rate: float = 0.01
     num_epochs: int = 10
     device: torch.device = field(default_factory=lambda: get_device())
-    dataset_root_dir: str = DATASET_ROOT_DIR
+    dataset_root_dir: str = DATASET_BASE_DIR
     num_folds: int = 5
     random_state: int = 42
     optimizer: str = 'SGD' 
@@ -65,6 +67,7 @@ def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch
         with tqdm(total=len(train_dataloader), desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
             for batch in train_dataloader:
                 imgs, masks = batch
+
                 imgs, masks = imgs.to(device), masks.to(device)
                 model.zero_grad()
                 output = model(imgs)
@@ -124,7 +127,7 @@ def get_config():
     assert config.batch_size > 0, 'Batch size must be greater than 0'
     assert 1 > config.learning_rate > 0, 'Learning rate must be greater than 0'
     assert config.num_epochs > 0, 'Number of epochs must be greater than 0'
-    assert os.path.exists(config.dataset_root_dir), 'Dataset root directory does not exist'
+    assert pathlib.Path(config.dataset_root_dir).exists(), 'Dataset root directory does not exist'
     
     return config
 
@@ -136,9 +139,9 @@ def main():
 
     # Create Segmentation Dataset instance
     # TODO: Here is where augmentation should be added to the dataset
-    base_transforms = transforms.Compose([
-        transforms.Resize((320, 320)),
-        transforms.ToTensor()
+    base_transforms = DualInputCompose([
+        DualInputResize((320, 320)),
+        DualInputTransform(transforms.ToTensor())
     ])
 
     train_dataset = TumorSemanticSegmentationDataset(root_dir=config.dataset_root_dir, split='train', transform=base_transforms)
@@ -164,7 +167,7 @@ def main():
 
         # Create a UNet model to train on this fold
         model = UNet()
-        summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
+        # summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
 
         # Move the model to the device
         model.to(device)
