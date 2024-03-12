@@ -11,3 +11,4 @@ jupyter
 nbconvert
 pre-commit
 torchinfo
+torchmetrics
