@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from torch.utils.data import Dataset
 
-from enums import DataSplit
+from src.enums import DataSplit
 
 class TumorClassificationDataset(Dataset):
     def __init__(self, root_dir, split: DataSplit, transform=None):
@@ -52,9 +52,19 @@ class TumorSemanticSegmentationDataset(Dataset):
         for annotation in self.labels['annotations']:
             image_id = annotation['image_id']
             # TODO: may need iscrowd field (not sure what it is)
-            self.image_id_to_annotation[image_id] = {'bbox': np.array(annotation['bbox']), 'segmentation':  annotation['segmentation'][0]}
+            annotation = {'bbox': np.array(annotation['bbox']), 'segmentation':  annotation['segmentation'][0]}
+            if image_id in self.image_id_to_annotation:
+                self.image_id_to_annotation[image_id].append(annotation)
+            else:
+                self.image_id_to_annotation[image_id] = [annotation]
 
 
+        # THIS IS BAD, but THE DATASET IS ALSO BAD
+        INCORRECTLY_ANNOTATED_IMAGES = {1380}
+        for image_id in INCORRECTLY_ANNOTATED_IMAGES:
+            if image_id in self.image_id_to_file_name:
+                del self.image_id_to_file_name[image_id]
+        
         self.image_ids = list(self.image_id_to_file_name.keys())
 
 
@@ -67,17 +77,17 @@ class TumorSemanticSegmentationDataset(Dataset):
         
         # TODO: determine if this should be RGB or L (grey scale)
         image = Image.open(img_path).convert('RGB')
-        annotation = self.image_id_to_annotation[image_id]
+        annotations = self.image_id_to_annotation[image_id]
 
-        mask = self._create_mask(annotation, image.size)
+        mask = self._create_mask(annotations, image.size)
 
         if self.transform:
-            image = self.transform(image)
-            mask = self.transform(mask)
+            image, mask = self.transform(image, mask)
         return image, mask
     
-    def _create_mask(self, annotation, image_size):
+    def _create_mask(self, annotations, image_size):
         mask = Image.new('L', image_size, 0)
-        ImageDraw.Draw(mask).polygon(annotation['segmentation'], outline=255, fill=255)
+        for annotation in annotations:
+            ImageDraw.Draw(mask).polygon(annotation['segmentation'], outline=255, fill=255) # Draw the polygon
         return mask
             
