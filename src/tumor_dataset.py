@@ -56,23 +56,6 @@ class TumorBinaryClassificationDataset(TumorClassificationDataset):
             label = self.class_to_idx["notumor"]
 
         return img, label
-    
-
-class TumorBinaryClassificationDataset(TumorClassificationDataset):
-    def __init__(self, root_dir, split: DataSplit, transform=None):
-        super().__init__(root_dir, split, transform)
-        self.classes = ['notumor', 'tumor']
-        self.parent_idx_to_class = self.idx_to_class
-        self.idx_to_class = {i: cls_name for i, cls_name in enumerate(self.classes)}
-        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
-    
-    def __getitem__(self, idx):
-        img, label = super().__getitem__(idx)
-        if self.parent_idx_to_class[label] != 'notumor':
-            label = 1
-        else:
-            label = 0
-        return img, label
 
 
 class TumorSemanticSegmentationDataset(Dataset):
