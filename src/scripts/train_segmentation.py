@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
 from src.models.segmentation.unet import UNet
-from src.tumor_dataset import TumorSemanticSegmentationDataset
+from src.data.segmentation import TumorSemanticSegmentationDataset
 from src.utils.visualize import show_images_with_masks
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 
