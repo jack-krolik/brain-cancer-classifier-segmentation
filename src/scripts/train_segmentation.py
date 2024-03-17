@@ -9,14 +9,23 @@ from sklearn.model_selection import KFold
 from tqdm import trange, tqdm
 import argparse
 import pathlib
-from dataclasses import dataclass, field
+from dotenv import load_dotenv
+import wandb
+import os
+
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
 from src.models.segmentation.unet import UNet
 from src.data.segmentation import TumorSemanticSegmentationDataset
 from src.utils.visualize import show_images_with_masks
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
+from src.utils.config import TrainingConfig, Hyperparameters
+from src.utils.wandb import create_wandb_config, verify_wandb_config
 
+
+# LOGIN TO W&B
+load_dotenv()
+wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
 
 """
 Key Notes for Later Improvements / Implementations Details:
@@ -27,32 +36,7 @@ Key Notes for Later Improvements / Implementations Details:
 - NOTE: Main benefit of BCEWithLogitsLoss is that it is numerically stable because it uses the log-sum-exp trick
 """
 
-DATASET_BASE_DIR = pathlib.Path(__file__).parent.parent.parent / 'datasets'
-
-def get_device():
-    """
-    Get the device to use for training (cuda if available, then mps, then cpu)
-    """
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
-
-@dataclass
-class TrainingConfig:
-    batch_size: int = 1
-    learning_rate: float = 0.01
-    num_epochs: int = 10
-    device: torch.device = field(default_factory=lambda: get_device())
-    dataset_root_dir: str = DATASET_BASE_DIR
-    num_folds: int = 5
-    random_state: int = 42
-    optimizer: str = 'SGD' 
-    momentum: float = 0.99  
-
-def get_config():
+def get_train_config():
     """
     Get the training configuration
     """
@@ -64,19 +48,25 @@ def get_config():
                         help='Learning rate (default: 0.01)')
     parser.add_argument('--epochs', type=int, default=10,
                         help='Number of epochs to train (default: 10)')
+    parser.add_argument('--n_folds', type=int, default=5,
+                        help='Number of folds for cross validation (default: 5)')
+    parser.add_argument('--architecture', type=str, default='unet')
     args = parser.parse_args()
 
-    config = TrainingConfig(batch_size=args.batch_size, learning_rate=args.learning_rate, num_epochs=args.epochs)
-    # validate the configuration
-    assert config.batch_size > 0, 'Batch size must be greater than 0'
-    assert 1 > config.learning_rate > 0, 'Learning rate must be greater than 0'
-    assert config.num_epochs > 0, 'Number of epochs must be greater than 0'
-    assert pathlib.Path(config.dataset_root_dir).exists(), 'Dataset root directory does not exist'
-    
-    return config
+
+    # TODO: accept more model architectures as input
+    assert args.architecture in ['unet'], f'Invalid architecture: {args.architecture}'
+
+    # TODO: add metrics to the configuration
+    # create a training configuration
+    hyperparams = Hyperparameters(optimizer='SGD', loss_fn='BCEWithLogitsLoss', batch_size=args.batch_size, learning_rate=args.learning_rate, n_epochs=args.epochs, additional_params={
+        'momentum': 0.99
+    })
+
+    return TrainingConfig(architecture=args.architecture, dataset='base_segmentation', n_folds=args.n_folds, hyperparameters=hyperparams)
 
 
-def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: TrainingConfig, metrics: torchmetrics.MetricCollection):
+def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: dict, metrics: torchmetrics.MetricCollection, device: torch.device):
     """
     Main training loop for the model
 
@@ -88,23 +78,26 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
     - loss_fn (torch.nn.Module): the loss function being optimized
     - metrics (torchmetrics.MetricCollection): the metrics to validate the model performance
     """
-    device, num_epochs = config.device, config.num_epochs
+    num_epochs = config.n_epochs
     total_steps = len(train_dataloader) + len(val_dataloader)
+
+    model.to(device)
     
     for epoch in range(num_epochs):
         with tqdm(total=total_steps, desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
-            train(model, train_dataloader, optimizer, loss_fn, config, pbar)
+            train(model, train_dataloader, optimizer, loss_fn, config, device, pbar)
 
-            val_metrics = evaluate(model, val_dataloader, loss_fn, config, metrics, pbar)
+            val_metrics = evaluate(model, val_dataloader, loss_fn, config, metrics, device, pbar)
 
-            for metric_name, metric_value in val_metrics.items():
-                print(f'{metric_name}: {metric_value:.4f}')
-        
-            # add wandb logging here for metrics
+            metrics_bundled = {f'val_{metric_name}': metric_value for metric_name, metric_value in val_metrics.items()}
+            wandb.log(metrics_bundled)
 
-            # determine if the model should be saved
+            # log metrics to console
+            print("\n".join([f"{key}: {value:.4f}" for key, value in val_metrics.items()]))
+    
+            # determine if the model should be saved based on the validation metrics and the past best model
 
-def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: TrainingConfig, pbar: tqdm):
+def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: dict, device: torch.device, pbar: tqdm):
     """
     Train the model on the training set
 
@@ -113,9 +106,11 @@ def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch
     - train_dataloader (DataLoader): the training set dataloader
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
     - loss_fn (torch.nn.Module): the loss function being optimized
+    - config (dict): the wandb configuration for the training
+    - device (torch.device): the device to use for training
     - pbar (tqdm): the progress bar to update
     """
-    device, num_epochs = config.device, config.num_epochs
+    num_epochs = config.n_epochs
     model.train()
     cumalative_loss = 0
     for imgs, masks in train_dataloader:
@@ -130,9 +125,11 @@ def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch
         pbar.set_postfix({'Loss': f'{loss.item():.4f}', "Phase": 'Train'})
         pbar.update()
 
+        # Should I be logging the loss to W&B here?
+
         # TODO: Add a scheduler to adjust learning rate
 
-def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.nn.Module, config: TrainingConfig, metrics: torchmetrics.MetricCollection, pbar: tqdm):
+def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.nn.Module, config: dict, metrics: torchmetrics.MetricCollection, device: torch.device, pbar: tqdm):
     """
     Evaluate the model on the validation set
 
@@ -142,9 +139,9 @@ def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.
     - loss_fn (torch.nn.Module): the loss function to use
     - config (TrainingConfig): the training configuration
     - metrics (torchmetrics.MetricCollection): the metrics to track
+    - device (torch.device): the device to use for evaluation
     - pbar (tqdm): the progress bar to update
     """
-    device = config.device
     model.eval()
     # Reset the metrics
     metrics.reset()
@@ -167,8 +164,8 @@ def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.
 
 def main():
     # Get the training configuration
-    config = get_config()
-    device = config.device
+    training_config = get_train_config()
+    device = training_config.device
 
     # Define the augmentation pipeline for the dataset
     # TODO: Here is where augmentation should be added to the dataset
@@ -177,15 +174,18 @@ def main():
         DualInputTransform(transforms.ToTensor())
     ])
 
-    # Create Segmentation Dataset instance
-    train_dataset = TumorSemanticSegmentationDataset(root_dir=config.dataset_root_dir, split='train', transform=base_transforms)
-    test_dataset = TumorSemanticSegmentationDataset(root_dir=config.dataset_root_dir, split='test', transform=base_transforms)
+    if training_config.dataset == 'base_segmentation':
+        # Create Segmentation Dataset instance
+        train_dataset = TumorSemanticSegmentationDataset(root_dir=training_config.dataset_root_dir, split='train', transform=base_transforms)
+        test_dataset = TumorSemanticSegmentationDataset(root_dir=training_config.dataset_root_dir, split='test', transform=base_transforms)
+    else:
+        raise ValueError(f'Invalid dataset: {training_config.dataset}')
 
     print(f'Train dataset length: {len(train_dataset)}')
     print(f'Test dataset length: {len(test_dataset)}')
 
     # Create a KFold instance
-    kfold = KFold(n_splits=config.num_folds, shuffle=True, random_state=config.random_state)
+    kfold = KFold(n_splits=training_config.n_folds, shuffle=True, random_state=training_config.random_state)
 
     # Define Metrics to track (e.g. accuracy, precision, recall, etc.)
     # NOTE: Metrics are defined in the torchmetrics library however, custom metrics can be created if needed
@@ -202,31 +202,38 @@ def main():
     for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
         print(f'Fold {fold}')
         print('---------------------------')
-        
-        # randomly sample train and validation ids from the dataset based on the fold
-        train_sampler = SubsetRandomSampler(train_ids)
-        val_sampler = SubsetRandomSampler(val_ids)
 
-        train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=train_sampler)
-        val_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=val_sampler) 
+        wandb_config = create_wandb_config(training_config, {'fold': fold})
 
-        # Create a UNet model to train on this fold
-        model = UNet()
-        summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
+        with wandb.init(project=os.getenv("WANDB_PROJECT"), config=wandb_config, tags=['segmentation']):
+            config = wandb.config
+            assert verify_wandb_config(config, training_config), 'W&B config does not match training config'
+            
+            # TODO: determine how to bundle the dataset into a make method
+            # randomly sample train and validation ids from the dataset based on the fold
+            train_sampler = SubsetRandomSampler(train_ids)
+            val_sampler = SubsetRandomSampler(val_ids)
 
-        # Move the model to the device
-        model.to(device)
+            train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=train_sampler)
+            val_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=val_sampler) 
 
-        if config.optimizer == 'SGD':
-            optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate, momentum=config.momentum)
-        else:
-            # NOTE: add more optimizers as needed 
-            raise ValueError(f'Invalid optimizer: {config.optimizer}')
+            if config.architecture == 'unet':
+                model = UNet()
+            else:
+                raise ValueError(f'Invalid architecture: {config.architecture}')
+            
+            if config.optimizer == 'SGD':
+                optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate, momentum=config.momentum)
+            else:
+                # NOTE: add more optimizers as needed 
+                raise ValueError(f'Invalid optimizer: {config.optimizer}')
 
-        loss_fn = torch.nn.BCEWithLogitsLoss(reduction='mean') # Binary Cross Entropy with Logits Loss
+            if config.loss_fn == 'BCEWithLogitsLoss':
+                loss_fn = torch.nn.BCEWithLogitsLoss(reduction='mean')
+            
+            # Train the model
+            main_train_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, config, metrics, device) 
 
-        # Train the model
-        main_train_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, config, metrics) 
 
 if __name__ == '__main__':
     main()
