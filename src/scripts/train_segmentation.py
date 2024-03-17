@@ -74,45 +74,65 @@ def get_config():
     assert pathlib.Path(config.dataset_root_dir).exists(), 'Dataset root directory does not exist'
     
     return config
-    
 
-def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: TrainingConfig):
+
+def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: TrainingConfig, metrics: torchmetrics.MetricCollection):
+    """
+    Main training loop for the model
+
+    Args:
+    - model (torch.nn.Module): the model to train
+    - train_dataloader (DataLoader): the training set dataloader
+    - val_dataloader (DataLoader): the validation set dataloader
+    - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
+    - loss_fn (torch.nn.Module): the loss function being optimized
+    - metrics (torchmetrics.MetricCollection): the metrics to validate the model performance
+    """
+    device, num_epochs = config.device, config.num_epochs
+    total_steps = len(train_dataloader) + len(val_dataloader)
+    
+    for epoch in range(num_epochs):
+        with tqdm(total=total_steps, desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
+            train(model, train_dataloader, optimizer, loss_fn, config, pbar)
+
+            val_metrics = evaluate(model, val_dataloader, loss_fn, config, metrics, pbar)
+
+            for metric_name, metric_value in val_metrics.items():
+                print(f'{metric_name}: {metric_value:.4f}')
+        
+            # add wandb logging here for metrics
+
+            # determine if the model should be saved
+
+def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: TrainingConfig, pbar: tqdm):
     """
     Train the model on the training set
 
     Args:
     - model (torch.nn.Module): the model to train
     - train_dataloader (DataLoader): the training set dataloader
-    - optimizer (torch.optim.Optimizer): the optimizer to use
-    - loss_fn (torch.nn.Module): the loss function to use
-    - config (dict): a dictionary containing the training configuration
+    - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
+    - loss_fn (torch.nn.Module): the loss function being optimized
+    - pbar (tqdm): the progress bar to update
     """
     device, num_epochs = config.device, config.num_epochs
     model.train()
-    for epoch in range(num_epochs):
-        cumalative_loss = 0
-        with tqdm(total=len(train_dataloader), desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
-            for batch in train_dataloader:
-                imgs, masks = batch
+    cumalative_loss = 0
+    for imgs, masks in train_dataloader:
+        imgs, masks = imgs.to(device), masks.to(device)
+        model.zero_grad()
+        output = model(imgs)
+        loss = loss_fn(output, masks)
+        loss.backward()
+        optimizer.step()
+        cumalative_loss += loss.item()
 
-                imgs, masks = imgs.to(device), masks.to(device)
-                model.zero_grad()
-                output = model(imgs)
-                loss = loss_fn(output, masks)
-                loss.backward()
-                optimizer.step()
-                cumalative_loss += loss.item()
+        pbar.set_postfix({'Loss': f'{loss.item():.4f}', "Phase": 'Train'})
+        pbar.update()
 
-                # NOTE: we can add additional metrics here (e.g. accuracy, precision, recall, etc.)
-                
-                pbar.set_postfix({'Loss': loss.item()})
-                pbar.update()
-
-        print(f'Epoch {epoch+1}/{num_epochs} - Avg Loss: {cumalative_loss / len(train_dataloader)}')
         # TODO: Add a scheduler to adjust learning rate
-        # May also want to evaluate the model on the validation set after each epoch (or every few epochs)
 
-def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.nn.Module, config: TrainingConfig, metrics: torchmetrics.MetricCollection):
+def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.nn.Module, config: TrainingConfig, metrics: torchmetrics.MetricCollection, pbar: tqdm):
     """
     Evaluate the model on the validation set
 
@@ -120,31 +140,30 @@ def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.
     - model (torch.nn.Module): the model to evaluate
     - dataloader (DataLoader): the validation set dataloader
     - loss_fn (torch.nn.Module): the loss function to use
+    - config (TrainingConfig): the training configuration
+    - metrics (torchmetrics.MetricCollection): the metrics to track
+    - pbar (tqdm): the progress bar to update
     """
     device = config.device
-
+    model.eval()
     # Reset the metrics
     metrics.reset()
-
-    model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         cumalative_loss = 0
-        with tqdm(total=len(val_dataloader), desc='Validation', unit='batch') as pbar:
-            for imgs, masks in val_dataloader:
-                imgs, masks = imgs.to(device), masks.to(device)
-                output = model(imgs)
-                loss = loss_fn(output, masks)
-                cumalative_loss += loss.item()
+        for imgs, masks in val_dataloader:
+            imgs, masks = imgs.to(device), masks.to(device)
+            output = model(imgs)
+            loss = loss_fn(output, masks)
+            cumalative_loss += loss.item()
 
-                preds = output.detach().sigmoid().round()
-                computed_metrics = metrics(preds, masks)
-                pbar.set_postfix({'Loss': loss.item()})
-                pbar.update()
+            preds = output.detach().sigmoid().round()
+
+            computed_metrics = metrics(preds, masks)
+            pbar.set_postfix({'Loss': f'{loss.item():.4f}', "Phase": 'Validation'})
+            pbar.update()
         
-        total_metrics = metrics.compute() # Compute the metrics over the entire validation set
-        print(f'Validation Metrics: {total_metrics}')
-        print(f'Validation Loss: {cumalative_loss / len(val_dataloader)}')
-
+    total_metrics = metrics.compute() # Compute the metrics over the entire validation set
+    return {'loss': cumalative_loss / len(val_dataloader), **total_metrics} 
 
 def main():
     # Get the training configuration
@@ -193,7 +212,7 @@ def main():
 
         # Create a UNet model to train on this fold
         model = UNet()
-        # summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
+        summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
 
         # Move the model to the device
         model.to(device)
@@ -207,11 +226,7 @@ def main():
         loss_fn = torch.nn.BCEWithLogitsLoss(reduction='mean') # Binary Cross Entropy with Logits Loss
 
         # Train the model
-        train(model, train_dataloader, optimizer, loss_fn, config)
-        
-        # Evaluate the model
-        evaluate(model, val_dataloader, loss_fn, config, metrics)
-
+        main_train_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, config, metrics) 
 
 if __name__ == '__main__':
     main()
