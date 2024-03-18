@@ -85,17 +85,18 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
     
     for epoch in range(num_epochs):
         with tqdm(total=total_steps, desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
-            train(model, train_dataloader, optimizer, loss_fn, config, device, pbar)
+            train_loss = train(model, train_dataloader, optimizer, loss_fn, config, device, pbar)
 
             val_metrics = evaluate(model, val_dataloader, loss_fn, config, metrics, device, pbar)
 
             metrics_bundled = {f'val_{metric_name}': metric_value for metric_name, metric_value in val_metrics.items()}
+            metrics_bundled['train_loss'] = train_loss # add the training loss to the metrics
             wandb.log(metrics_bundled)
 
             # log metrics to console
             print("\n".join([f"{key}: {value:.4f}" for key, value in val_metrics.items()]))
     
-            # determine if the model should be saved based on the validation metrics and the past best model
+            # TODO: determine if the model should be saved based on the validation metrics and the past best model
 
 def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: dict, device: torch.device, pbar: tqdm):
     """
@@ -124,10 +125,12 @@ def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch
 
         pbar.set_postfix({'Loss': f'{loss.item():.4f}', "Phase": 'Train'})
         pbar.update()
+    
+    # TODO: Add a scheduler to adjust learning rate
 
-        # Should I be logging the loss to W&B here?
+    train_loss = cumalative_loss / len(train_dataloader)
 
-        # TODO: Add a scheduler to adjust learning rate
+    return train_loss
 
 def evaluate(model: torch.nn.Module, val_dataloader: DataLoader, loss_fn: torch.nn.Module, config: dict, metrics: torchmetrics.MetricCollection, device: torch.device, pbar: tqdm):
     """
