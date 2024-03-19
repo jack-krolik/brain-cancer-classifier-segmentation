@@ -1,4 +1,5 @@
 from torch import nn
+from enum import Enum
 import torch.nn.functional as F
 from torchvision.models import (
     efficientnet_b0,
@@ -10,6 +11,13 @@ from torchvision.models import (
     efficientnet_b6,
     efficientnet_b7,
 )
+
+
+class MODEL_MODES(Enum):
+    TRAINING = 1
+    INFERENCE = 2
+    FINE_TUNE = 3
+
 
 activations = {
     "ReLU": nn.ReLU(),
@@ -54,6 +62,7 @@ class EfficientNet(nn.Module):
     ):
         super(EfficientNet, self).__init__()
         self.pretrained = pretrained
+        self.mode = MODEL_MODES.TRAINING
 
         # EfficientNet
         self.efficient_net = get_efficientnet(efficient_net_v, pretrained)
@@ -67,6 +76,22 @@ class EfficientNet(nn.Module):
 
     def forward(self, x):
         return self.efficient_net(x)
+
+    def set_mode(self, mode: MODEL_MODES):
+
+        self.mode = mode
+
+        if mode == MODEL_MODES.TRAINING:
+            for param in self.efficient_net.parameters():
+                param.requires_grad = True
+
+        elif mode == MODEL_MODES.FINE_TUNE or mode == MODEL_MODES.INFERENCE:
+            for param in self.efficient_net.parameters():
+                param.requires_grad = False
+
+        if mode == MODEL_MODES.FINE_TUNE:
+            for param in self.efficient_net.classifier.parameters():
+                param.requires_grad = True
 
 
 model = EfficientNet()

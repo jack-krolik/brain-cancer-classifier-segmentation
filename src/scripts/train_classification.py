@@ -1,4 +1,4 @@
-from src.models.classification.efficient_net import EfficientNet
+from src.models.classification.efficient_net import MODEL_MODES, EfficientNet
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, SubsetRandomSampler
@@ -269,7 +269,7 @@ def main():
         )
 
         # Create a UNet model to train on this fold
-        model = EfficientNet()
+        model = EfficientNet("b0")
         # summary(model, input_size=(config.batch_size, 3, 320, 320)) # TODO - programatically get input size
 
         # Move the model to the device
