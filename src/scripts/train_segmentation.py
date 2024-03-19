@@ -27,6 +27,11 @@ from src.utils.wandb import create_wandb_config, verify_wandb_config
 load_dotenv()
 wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
 
+SAVE_MODEL_DIR = pathlib.Path(__file__).parent.parent.parent / 'models'
+
+if not SAVE_MODEL_DIR.exists():
+    SAVE_MODEL_DIR.mkdir()
+
 """
 Key Notes for Later Improvements / Implementations Details:
 - NOTE: UNet paper uses SGD with momentum = 0.99 (this may be a good starting point for hyperparameter tuning)
@@ -82,6 +87,8 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
     total_steps = len(train_dataloader) + len(val_dataloader)
 
     model.to(device)
+
+    best_eval_loss = float('inf')
     
     for epoch in range(num_epochs):
         with tqdm(total=total_steps, desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
@@ -95,8 +102,21 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
 
             # log metrics to console
             print("\n".join([f"{key}: {value:.4f}" for key, value in val_metrics.items()]))
+
+            val_loss = val_metrics['val_loss']
+
+            if val_loss < best_eval_loss:
+
+                if best_model_path is not None: # remove the previous best model
+                    os.remove(best_model_path)
+                
+                # save the best model locally
+                best_model_path = SAVE_MODEL_DIR / f'best_{config.architecture}_{config.dataset}_fold_{config.fold}_model.h5'
+                torch.save(model.state_dict(), best_model_path) 
+                best_eval_loss = val_loss
     
-            # TODO: determine if the model should be saved based on the validation metrics and the past best model
+    # save the best model to wandb
+    wandb.save(best_model_path) 
 
 def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: dict, device: torch.device, pbar: tqdm):
     """
@@ -236,6 +256,7 @@ def main():
             
             # Train the model
             main_train_loop(model, train_dataloader, val_dataloader, optimizer, loss_fn, config, metrics, device) 
+
 
 
 if __name__ == '__main__':
