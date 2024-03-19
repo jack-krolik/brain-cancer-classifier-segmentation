@@ -89,6 +89,7 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
     model.to(device)
 
     best_eval_loss = float('inf')
+    best_model_path = None
     
     for epoch in range(num_epochs):
         with tqdm(total=total_steps, desc=f'Epoch {epoch+1}/{num_epochs}', unit='batch') as pbar:
@@ -114,9 +115,11 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
                 best_model_path = SAVE_MODEL_DIR / f'best_{config.architecture}_{config.dataset}_fold_{config.fold}_model.h5'
                 torch.save(model.state_dict(), best_model_path) 
                 best_eval_loss = val_loss
+
+                print(f"New best model saved at {best_model_path}")
     
     # save the best model to wandb
-    wandb.save(best_model_path) 
+    wandb.save(str(best_model_path)) 
 
 def train(model: torch.nn.Module, train_dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, config: dict, device: torch.device, pbar: tqdm):
     """
@@ -234,8 +237,8 @@ def main():
             
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids)
-            val_sampler = SubsetRandomSampler(val_ids)
+            train_sampler = SubsetRandomSampler(train_ids[:32])
+            val_sampler = SubsetRandomSampler(val_ids[:32])
 
             train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=train_sampler)
             val_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=val_sampler) 
