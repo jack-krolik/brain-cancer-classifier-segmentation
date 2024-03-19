@@ -101,9 +101,9 @@ def main_train_loop(model: torch.nn.Module, train_dataloader: DataLoader, val_da
             wandb.log(metrics_bundled)
 
             # log metrics to console
-            print("\n".join([f"{key}: {value:.4f}" for key, value in val_metrics.items()]))
+            print("\n".join([f"{key}: {value:.4f}" for key, value in metrics_bundled.items()]))
 
-            val_loss = val_metrics['val_loss']
+            val_loss = metrics_bundled['val_loss']
 
             if val_loss < best_eval_loss:
 
