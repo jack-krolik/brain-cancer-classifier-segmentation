@@ -1,4 +1,6 @@
 datasets/ 
+models/
+wandb/
 # don't push downloaded datasets please 
 
 

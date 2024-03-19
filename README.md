@@ -38,11 +38,21 @@ This command sets up the hooks based on our project's .pre-commit-config.yaml co
 
 This current hook cleans the Jupyter notebooks before they are committed.
 
-### Step 3: Kaggle API Authentication
+### Step 3: Setup Environment Variables
+
+To create a base configuration for the project, run the following command:
+
+```bash
+cp config/env_local.env .env
+```
+
+This will create a `.env` file in the root dir of the project. However, to actually run training and testing scripts, you will need to fill in the values in the `.env` file.
+
+### Step 4: Kaggle API Authentication
 
 Follow the instructions to set up your Kaggle API credentials. You can find the Kaggle API authentication instructions in the [Kaggle API Documentation](https://www.kaggle.com/docs/api).
 
-### Step 4: Download Datasets
+### Step 5: Download Datasets
 
 Refer to the `notebooks/downloading_datasets.ipynb` notebook for step-by-step instructions on using the Kaggle API to download the datasets required for this project. The datasets will be downloaded to the `./datasets` folder, which is configured to be ignored by git.
 
