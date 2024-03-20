@@ -1,5 +1,4 @@
-datasets/ 
-models/
+datasets/
 wandb/
 # don't push downloaded datasets please 
 
