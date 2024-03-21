@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import os
 import wandb
+from contextlib import nullcontext
 
 from src.utils.config import TrainingConfig
 
@@ -42,3 +43,20 @@ def verify_wandb_config(wb_config: dict, training_config: TrainingConfig):
     match_architecture = architecture == wb_config.get("architecture", None)
 
     return match_hyperparameters and match_dataset and match_architecture
+
+
+def wandb_init(config: dict, disable_wandb: bool = False, **kwargs):
+    """
+    Initialize wandb if the disable_wandb flag is not set
+
+    Args:
+    - config (dict): the dictionary containing the training configuration
+    - additional_params (dict): additional parameters to log to wandb
+
+    Returns:
+    - wandb.init or null context manager
+    """
+    if not disable_wandb:
+        return wandb.init(config=config, **kwargs)
+    else:
+        return nullcontext()

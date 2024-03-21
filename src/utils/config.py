@@ -47,6 +47,7 @@ class TrainingConfig:
     random_state: int = 42
     device: torch.device = field(default_factory=lambda: get_device())
     dataset_root_dir: str = DATASET_BASE_DIR
+    disable_wandb: bool = False
     hyperparameters: Hyperparameters = field(default_factory=Hyperparameters)
 
     def __post_init__(self):
