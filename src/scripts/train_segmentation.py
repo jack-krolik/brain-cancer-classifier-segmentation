@@ -237,8 +237,8 @@ def main():
             
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids[:32])
-            val_sampler = SubsetRandomSampler(val_ids[:32])
+            train_sampler = SubsetRandomSampler(train_ids)
+            val_sampler = SubsetRandomSampler(val_ids)
 
             train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=train_sampler)
             val_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, sampler=val_sampler) 
