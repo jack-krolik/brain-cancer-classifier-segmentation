@@ -15,6 +15,7 @@ from torchmetrics.classification import (
 from sklearn.model_selection import KFold
 from tqdm import trange, tqdm
 import argparse
+from argparse import Namespace
 import pathlib
 from dotenv import load_dotenv
 import wandb
@@ -27,12 +28,12 @@ from src.data.segmentation import TumorSemanticSegmentationDataset
 from src.utils.visualize import show_images_with_masks
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
-from src.utils.wandb import create_wandb_config, verify_wandb_config
+from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 
 
 # LOGIN TO W&B
 load_dotenv()
-wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
+
 
 SAVE_MODEL_DIR = pathlib.Path(__file__).parent.parent.parent / "model_registry"
 
@@ -78,6 +79,12 @@ def get_train_config():
         default=5,
         help="Number of folds for cross validation (default: 5)",
     )
+    parser.add_argument(
+        "--disable_wandb",
+        action="store_true",
+        help="Flag to disable logging to W&B (default: False)",
+    )
+
     parser.add_argument("--architecture", type=str, default="unet")
     args = parser.parse_args()
 
@@ -99,6 +106,7 @@ def get_train_config():
         architecture=args.architecture,
         dataset="base_segmentation",
         n_folds=args.n_folds,
+        disable_wandb=args.disable_wandb,
         hyperparameters=hyperparams,
     )
 
@@ -112,7 +120,8 @@ def main_train_loop(
     config: dict,
     metrics: torchmetrics.MetricCollection,
     device: torch.device,
-):
+    logger=print,
+) -> pathlib.Path:
     """
     Main training loop for the model
 
@@ -123,6 +132,10 @@ def main_train_loop(
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
     - loss_fn (torch.nn.Module): the loss function being optimized
     - metrics (torchmetrics.MetricCollection): the metrics to validate the model performance
+    - logger (Callable): the logger to use for logging (e.g. wandb.log, print, etc.)
+
+    Returns:
+    - pathlib.Path: the path to the best model
     """
     num_epochs = config.n_epochs
     total_steps = len(train_dataloader) + len(val_dataloader)
@@ -151,14 +164,8 @@ def main_train_loop(
             metrics_bundled["train_loss"] = (
                 train_loss  # add the training loss to the metrics
             )
-            wandb.log(metrics_bundled)
 
-            # log metrics to console
-            print(
-                "\n".join(
-                    [f"{key}: {value:.4f}" for key, value in metrics_bundled.items()]
-                )
-            )
+            logger(metrics_bundled)
 
             val_loss = metrics_bundled["val_loss"]
 
@@ -177,8 +184,7 @@ def main_train_loop(
 
                 print(f"New best model saved at {best_model_path}")
 
-    # save the best model to wandb
-    wandb.save(str(best_model_path))
+    return best_model_path
 
 
 def train(
@@ -273,6 +279,10 @@ def main():
     training_config = get_train_config()
     device = training_config.device
 
+    # Login to W&B
+    if not training_config.disable_wandb:
+        wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
+
     # Define the augmentation pipeline for the dataset
     # TODO: Here is where augmentation should be added to the dataset
     base_transforms = DualInputCompose(
@@ -324,20 +334,24 @@ def main():
 
         wandb_config = create_wandb_config(training_config, {"fold": fold})
 
-        with wandb.init(
+        with wandb_init(
+            wandb_config,
+            disable_wandb=training_config.disable_wandb,
             project=os.getenv("WANDB_PROJECT"),
-            config=wandb_config,
             tags=["segmentation"],
         ):
-            config = wandb.config
-            assert verify_wandb_config(
-                config, training_config
-            ), "W&B config does not match training config"
+            if not training_config.disable_wandb:
+                config = wandb.config
+                assert verify_wandb_config(
+                    config, training_config
+                ), "W&B config does not match training config"
+            else:
+                config = Namespace(**wandb_config)
 
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids)
-            val_sampler = SubsetRandomSampler(val_ids)
+            train_sampler = SubsetRandomSampler(train_ids[:16])
+            val_sampler = SubsetRandomSampler(val_ids[:16])
 
             train_dataloader = DataLoader(
                 train_dataset, batch_size=config.batch_size, sampler=train_sampler
@@ -363,9 +377,11 @@ def main():
 
             if config.loss_fn == "BCEWithLogitsLoss":
                 loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
+            
+            logger = wandb.log if not training_config.disable_wandb else print
 
             # Train the model
-            main_train_loop(
+            path_to_best_model =  main_train_loop(
                 model,
                 train_dataloader,
                 val_dataloader,
@@ -374,7 +390,11 @@ def main():
                 config,
                 metrics,
                 device,
+                logger=logger,
             )
+
+            if not training_config.disable_wandb:
+                wandb.save(str(path_to_best_model))
 
 
 if __name__ == "__main__":
