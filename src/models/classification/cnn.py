@@ -5,7 +5,34 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from src.data.classification import TumorBinaryClassificationDataset, DataSplit
 
+
 DIM = 256
+
+
+class ClassificationCNN(nn.Module):
+    def __init__(self):
+        super(ClassificationCNN, self).__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1
+        )
+        self.conv2 = nn.Conv2d(
+            in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1
+        )
+
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.fc1 = nn.Linear(64 * 64 * 64, 512)
+        self.fc2 = nn.Linear(512, 1)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+
+        x = x.view(-1, 64 * 64 * 64)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
 
 transform = transforms.Compose(
     [
@@ -35,25 +62,12 @@ print("Test dataset length: ", len(test_dataset))
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-
-class LogisiticRegression(nn.Module):
-    def __init__(self):
-        super(LogisiticRegression, self).__init__()
-        self.linear = nn.Linear(DIM * DIM * 3, 1)
-
-    def forward(self, x):
-        x = x.view(-1, DIM * DIM * 3)
-        x = self.linear(x)
-        x = torch.sigmoid(x)
-        return x
-
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = LogisiticRegression().to(device)
-criterion = nn.BCELoss()
+model = ClassificationCNN().to(device)
+criterion = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01, weight_decay=0.001)
 
-num_epochs = 10
+num_epochs = 20
 for epoch in range(num_epochs):
     model.train()
     for images, labels in train_loader:
@@ -83,11 +97,5 @@ with torch.no_grad():
     print(f"Accuracy of the model on test images: {accuracy}%")
 
 """
-WRONG:
-Achieved as high as (90% accuracy, can def go higher. Had better results on lower resolution??
-
-CORRECT:
-I actually forgot to choose the test set to validate one lmao.
-
-Accuracy for 10 epochs was 84%. Can probably get better.
+20 epochs, 99.6186117467582% accuracy!!! First try
 """
