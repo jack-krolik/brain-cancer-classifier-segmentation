@@ -6,19 +6,25 @@ def validate_model_input(checks):
     def decorator(func):
         @wraps(func)
         def wrapper(self, x, *args, **kwargs):
-            if not isinstance(x, torch.Tensor):
-                raise TypeError("Input must be a torch.Tensor")
-            if 'shape' in checks:
-                validate_shape(x, checks['shape'])
-            if 'dims' in checks:
-                validate_dims(x, checks['dims'])
-            if 'dtype' in checks and x.dtype != checks['dtype']:
-                raise TypeError(f"Expected input dtype {checks['dtype']}, but got {x.dtype}")
-            if 'device' in checks and x.device != next(self.parameters()).device:
-                raise ValueError(f"Input tensor is on {x.device}, but model parameters are on {next(self.parameters()).device}")
+            validate_input(checks, x=x, device=next(self.parameters).device)
             return func(self, x, *args, **kwargs)
         return wrapper
     return decorator
+
+def validate_input(checks, **kwargs):
+    """
+    validator method for validating model input / first argument
+    """
+    if not isinstance(kwargs['x'], torch.Tensor):
+        raise TypeError("Input must be a torch.Tensor")
+    if 'shape' in checks:
+        validate_shape(kwargs['x'], checks['shape'])
+    if 'dims' in checks:
+        validate_dims(kwargs['x'], checks['dims'])
+    if 'dtype' in checks and kwargs['x'].dtype != checks['dtype']:
+        raise TypeError(f"Expected input dtype {checks['dtype']}, but got {kwargs['x'].dtype}")
+    if 'device' in checks and kwargs['x'].device != kwargs['device']:
+        raise ValueError(f"Input tensor is on {kwargs['x'].device}, but model parameters are on {kwargs['model_device']}")
 
 
 def validate_shape(x: torch.Tensor, shape: tuple):

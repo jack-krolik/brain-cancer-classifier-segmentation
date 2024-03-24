@@ -7,7 +7,7 @@ from torch import nn
 import torch.nn.functional as F
 from typing import Union
 
-from src.utils.validators import validate_model_input
+from src.utils.validators import validate_input
 
 def init_conv_weights(m: Union[nn.Conv2d, nn.ConvTranspose2d]) -> None:
     """
@@ -31,11 +31,11 @@ def init_conv_weights(m: Union[nn.Conv2d, nn.ConvTranspose2d]) -> None:
 class UNet(nn.Module):
     # TODO: need to ask for input channels and output channels for the output layer
     # TODO: need to determine if intermediate layers should be affected by input in_channels and output out_channels
-    def __init__(self):
+    def __init__(self, in_channels:int=3, out_channels:int=1):
         super(UNet, self).__init__()
 
         # Encoder Block
-        self.enc_conv_block_1 = UNetConvBlock(in_channels=3, out_channels1=64, out_channels2=64)
+        self.enc_conv_block_1 = UNetConvBlock(in_channels=in_channels, out_channels1=64, out_channels2=64)
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2) 
         self.enc_conv_block_2 = UNetConvBlock(in_channels=64, out_channels1=128, out_channels2=128) 
         self.enc_conv_block_3 = UNetConvBlock(in_channels=128, out_channels1=256, out_channels2=256)
@@ -54,16 +54,10 @@ class UNet(nn.Module):
 
         # Output Layer
         # TODO - double check the output layer
-        self.output = nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, padding='valid') # TODO: double check on the padding
+        self.output = nn.Conv2d(in_channels=64, out_channels=out_channels, kernel_size=1, padding='valid') # TODO: double check on the padding
 
         self._init_weights()
     
-    @validate_model_input({
-        'shape': (3, 320, 320), #TODO: might need to check self.in_channels instead of assuming 3
-        'dims': [3,4],
-        'dtype': torch.float32,
-        'device': None # ignore the device for now
-    })
     def forward(self, x):
         """
         Forward pass through the UNet model.
@@ -71,6 +65,11 @@ class UNet(nn.Module):
         Note: Original paper uses 570x570 images, but this model will most likely use 320x320 images.
         320x320 is chosen as it won't cause rounding after maxpooling and is simply half of 640x640 (the dataset's original size).
         """
+
+        validate_input({
+            'dims': [3, 4],
+            'dtype': torch.float32,
+        }, x=x)
 
         # Encoder Block
         enc_1 = self.enc_conv_block_1(x) # Input shape is 3x320x320 -> 64x320x320
@@ -176,18 +175,22 @@ class UNetConvBlock(nn.Module):
         # padding='same' will ensure cleaner skip connections and output shapes. 
         # NOTE: padding='same' may also introduce artifacts at the edges of the images, this should be investigated further.
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels1, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check on the padding 
+        self.bnorm1 = nn.BatchNorm2d(out_channels1)
         self.conv2 = nn.Conv2d(in_channels=out_channels1, out_channels=out_channels2, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check about bias
+        self.bnorm2 = nn.BatchNorm2d(out_channels2)
 
-        # TODO: might need to do a BatchNorm before the ReLU
+        self.block = nn.Sequential(
+            self.conv1,
+            self.bnorm1,
+            nn.ReLU(),
+            self.conv2,
+            self.bnorm2,
+            nn.ReLU()
+        )
 
-        self.relu = nn.ReLU()
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.relu(x)
-        return x
+        return self.block(x)
     
     def _init_weights(self):
         """
