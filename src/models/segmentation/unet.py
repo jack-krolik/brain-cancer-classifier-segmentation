@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from typing import Union
 
 from src.utils.validators import validate_input
+from src.models.segmentation.shared import BatchNormRelu
 
 def init_conv_weights(m: Union[nn.Conv2d, nn.ConvTranspose2d]) -> None:
     """
@@ -175,17 +176,15 @@ class UNetConvBlock(nn.Module):
         # padding='same' will ensure cleaner skip connections and output shapes. 
         # NOTE: padding='same' may also introduce artifacts at the edges of the images, this should be investigated further.
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels1, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check on the padding 
-        self.bnorm1 = nn.BatchNorm2d(out_channels1)
+        self.bnrelu1 = BatchNormRelu(out_channels1)
         self.conv2 = nn.Conv2d(in_channels=out_channels1, out_channels=out_channels2, kernel_size=kernel_size, padding='same', bias=False)# TODO: double check about bias
-        self.bnorm2 = nn.BatchNorm2d(out_channels2)
+        self.bnrelu2 = BatchNormRelu(out_channels2)
 
         self.block = nn.Sequential(
             self.conv1,
-            self.bnorm1,
-            nn.ReLU(),
+            self.bnrelu1,
             self.conv2,
-            self.bnorm2,
-            nn.ReLU()
+            self.bnrelu2
         )
 
 
