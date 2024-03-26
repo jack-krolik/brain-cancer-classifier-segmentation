@@ -9,14 +9,14 @@ class LETNet(nn.Module):
     def __init__(self):
         super(LETNet, self).__init__()
         self.init_block = nn.Sequential(
-            ConvBnRelu(3, 32, kernel_size=3, padding=1),
-            ConvBnRelu(32, 32, kernel_size=3, padding=1),
-            ConvBnRelu(32, 32, stride=2, kernel_size=3, padding=1),
+            ConvBNPRelu(3, 32, kernel_size=3, padding=1),
+            ConvBNPRelu(32, 32, kernel_size=3, padding=1),
+            ConvBNPRelu(32, 32, stride=2, kernel_size=3, padding=1),
         )
 
         # TODO: downsample from 32 to 64 channels
         self.downsample = nn.Sequential(
-            ConvBnRelu(32, 64, stride=2, kernel_size=3, padding=1),
+            ConvBNPRelu(32, 64, stride=2, kernel_size=3, padding=1),
         )
         
     
@@ -30,28 +30,28 @@ class LBD(nn.Module):
         half_in_channels = in_channels // 2
 
         self.in_block = nn.Sequential(
-            ConvBnRelu(in_channels, half_in_channels, kernel_size=1, padding=0),
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(1, 0)),
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, 1)),
+            ConvBNPRelu(in_channels, half_in_channels, kernel_size=1, padding=0),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(1, 0)),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, 1)),
         )
 
         # depth wise convolution sequence
         # NOTE: goal is to capture local information in the image
         self.local_split = nn.Sequential(
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(1, 0), groups=half_in_channels),
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, 1), groups=half_in_channels),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(1, 0), groups=half_in_channels),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, 1), groups=half_in_channels),
             # TODO: add Channel Attention Block
         )
 
         # atrous convolution sequence (dilated convolution)
         # NOTE: goal is to capture distant information in the image
         self.distant_split = nn.Sequential(
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(dilation, 0), groups=half_in_channels),
-            ConvBnRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, dilation), groups=half_in_channels),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(3, 1), padding=(dilation, 0), groups=half_in_channels),
+            ConvBNPRelu(half_in_channels, half_in_channels, kernel_size=(1, 3), padding=(0, dilation), groups=half_in_channels),
             # TODO: add Channel Attention Block
         )
 
-        self.final_conv = ConvBnRelu(half_in_channels, in_channels, kernel_size=1, padding=0)
+        self.final_conv = ConvBNPRelu(half_in_channels, in_channels, kernel_size=1, padding=0)
 
         # TODO: add shuffling operation
     
@@ -65,12 +65,15 @@ class LBD(nn.Module):
         raise NotImplementedError("Shuffling operation + Channel Attention Block not implemented yet")
 
 # normalized Convolutional Layer with Batch Normalization and ReLU activation
-class ConvBnRelu(nn.Module):
+class ConvBNPRelu(nn.Module):
+    """
+    Convolutional Layer with Batch Normalization and PReLU activation.
+    """
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, padding: int, stride: int = 1, groups: int = 1):
         super(ConvBnRelu, self).__init__()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=groups),
-            BatchNormRelu(out_channels)
+            BatchNormRelu(out_channels, activation_variant="prelu")
         )
 
     def forward(self, x):
