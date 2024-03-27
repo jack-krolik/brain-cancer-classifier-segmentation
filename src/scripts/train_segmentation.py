@@ -20,16 +20,21 @@ import pathlib
 from dotenv import load_dotenv
 import wandb
 import os
+from enum import StrEnum, auto
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
 from src.models.segmentation.unet import UNet
-from src.data.segmentation import TumorSemanticSegmentationDataset
+from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
 from src.utils.visualize import show_images_with_masks
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 
+# TODO: Move this to a separate file
+class DatasetType(StrEnum):
+    BOX = auto()
+    LGG = auto()
 
 # LOGIN TO W&B
 load_dotenv()
@@ -85,6 +90,14 @@ def get_train_config():
         help="Flag to disable logging to W&B (default: False)",
     )
 
+    # only allow options `box` and `llr` for now
+    parser.add_argument(
+        '--dataset',
+        type=DatasetType,
+        default=DatasetType.BOX,
+        help='Dataset to use for training (default: box) (options: box, lgg)',
+    )
+
     parser.add_argument("--architecture", type=str, default="unet")
     args = parser.parse_args()
 
@@ -104,7 +117,7 @@ def get_train_config():
 
     return TrainingConfig(
         architecture=args.architecture,
-        dataset="base_segmentation",
+        dataset=args.dataset,
         n_folds=args.n_folds,
         disable_wandb=args.disable_wandb,
         hyperparameters=hyperparams,
@@ -289,14 +302,26 @@ def main():
         [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
     )
 
-    if training_config.dataset == "base_segmentation":
+    if training_config.dataset == DatasetType.BOX:
         # Create Segmentation Dataset instance
-        train_dataset = TumorSemanticSegmentationDataset(
+        train_dataset = BoxSegmentationDataset(
             root_dir=training_config.dataset_root_dir,
             split="train",
             transform=base_transforms,
         )
-        test_dataset = TumorSemanticSegmentationDataset(
+        test_dataset = BoxSegmentationDataset(
+            root_dir=training_config.dataset_root_dir,
+            split="test",
+            transform=base_transforms,
+        )
+    elif training_config.dataset == DatasetType.LGG:
+        # Create Segmentation Dataset instance
+        train_dataset = LGGSegmentationDataset(
+            root_dir=training_config.dataset_root_dir,
+            split="train",
+            transform=base_transforms,
+        )
+        test_dataset = LGGSegmentationDataset(
             root_dir=training_config.dataset_root_dir,
             split="test",
             transform=base_transforms,
