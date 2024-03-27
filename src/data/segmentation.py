@@ -9,7 +9,7 @@ from src.enums import DataSplit
 
 class TumorSemanticSegmentationDataset(Dataset):
     def __init__(self, root_dir, split: DataSplit, transform=None):
-        self.root_dir = os.path.join(root_dir, 'tumor-segmentation', split.lower())
+        self.root_dir = os.path.join(root_dir, 'tumor-segmentation-boxes', split.lower())
         self.transform = transform
          # Load annotations
         with open(os.path.join(self.root_dir, '_annotations.coco.json'), 'r') as file:
