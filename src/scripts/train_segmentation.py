@@ -31,6 +31,21 @@ from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 
 # TODO: Move this to a separate file
+
+"""
+TODO: Write own metrics instead of using torchmetrics
+TODO: Class imbalance handling for LGG dataset
+TODO: Include information about total training time of folds (maybe make pbar more dynamic)
+TODO: Add a scheduler to adjust learning rate
+TODO: Look into checkpointing for training (e.g. save model every n epochs instead of just the best model)
+TODO: Look into Gradient Accumulation (e.g. accumulate gradients over multiple batches before updating the model) (useful for large batch sizes and not crashing GPU)
+TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for large models) (use torch.cuda.amp.autocast() and torch.cuda.amp.GradScaler()) (requires NVIDIA GPU with Tensor Cores)
+TODO: Include hyperparameter info in saved model file name
+TODO: Make general printing of metrics more dynamic and cleaner
+"""
+
+
+
 class DatasetType(StrEnum):
     BOX = auto()
     LGG = auto()
@@ -225,7 +240,7 @@ def train(
     cumalative_loss = 0
     for imgs, masks in train_dataloader:
         imgs, masks = imgs.to(device), masks.to(device)
-        model.zero_grad()
+        optimizer.zero_grad()
         output = model(imgs)
         loss = loss_fn(output, masks)
         loss.backward()
