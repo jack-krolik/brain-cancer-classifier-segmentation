@@ -9,7 +9,6 @@ dependencies:
   - numpy
   - pandas
   - python=3.11
-  - pytorch
   - scikit-learn
   - scipy
   - torchaudio
@@ -19,3 +18,5 @@ dependencies:
   - torchinfo
   - python-dotenv
   - wandb
+  - pytorch
+  - pytorch-cuda=12.1
