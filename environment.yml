@@ -131,4 +131,3 @@ dependencies:
   - zeromq=4.3.5
   - zipp=3.17.0
   - zstd=1.5.5
-prefix: /Users/dimavremenko/miniconda3/envs/ai_project
