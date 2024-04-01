@@ -26,7 +26,6 @@ torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
 from src.models.segmentation.unet import UNet
 from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
-from src.utils.visualize import show_images_with_masks
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
