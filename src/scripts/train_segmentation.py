@@ -2,9 +2,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import transforms
-from torchinfo import summary
 from sklearn.model_selection import KFold
-from tqdm import trange, tqdm
+from tqdm import tqdm
 import argparse
 from argparse import Namespace
 import pathlib
@@ -35,6 +34,19 @@ TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for 
 TODO: Include hyperparameter info in saved model file name
 TODO: Make general printing of metrics more dynamic and cleaner
 """
+
+# NOTE: This is a simple logger class that can be log metrics to either the console or W&B (however, this should be expanded to include all logging functionality)
+class Logger:
+    def __init__(self, use_wandb: bool):
+        self.use_wandb = use_wandb
+
+    def log_metrics(self, metrics_bundled: dict):
+        if self.use_wandb:
+            wandb.log(metrics_bundled)
+        else:
+            print('Metrics:')
+            for metric_name, metric_value in metrics_bundled.items():
+                print(f'{metric_name}: {metric_value}')
 
 
 
@@ -139,7 +151,7 @@ def main_train_loop(
     config: dict,
     metrics: Metrics.MetricsPipeline,
     device: torch.device,
-    logger=print,
+    logger=Logger,
 ) -> pathlib.Path:
     """
     Main training loop for the model
@@ -151,7 +163,7 @@ def main_train_loop(
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
     - loss_fn (torch.nn.Module): the loss function being optimized
     - metrics (Metrics.MetricsPipeline): the metrics to validate the model performance
-    - logger (Callable): the logger to use for logging (e.g. wandb.log, print, etc.)
+    - logger (Logger): the logger to use for tracking metrics
 
     Returns:
     - pathlib.Path: the path to the best model
@@ -184,7 +196,7 @@ def main_train_loop(
                 train_loss  # add the training loss to the metrics
             )
 
-            logger(metrics_bundled)
+            logger.log_metrics(metrics_bundled)
 
             val_loss = metrics_bundled["val_loss"]
 
@@ -379,7 +391,7 @@ def main():
 
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids[:100]) # TODO: remove the 100 limit
+            train_sampler = SubsetRandomSampler(train_ids)
             val_sampler = SubsetRandomSampler(val_ids)
 
             train_dataloader = DataLoader(
@@ -407,10 +419,10 @@ def main():
             if config.loss_fn == "BCEWithLogitsLoss":
                 loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
             
-            logger = wandb.log if not training_config.use_wandb else print
+            logger = Logger(use_wandb=training_config.use_wandb)
 
             # Train the model
-            path_to_best_model =  main_train_loop(
+            path_to_best_model = main_train_loop(
                 model,
                 train_dataloader,
                 val_dataloader,
@@ -422,7 +434,7 @@ def main():
                 logger=logger,
             )
 
-            if not training_config.use_wandb:
+            if training_config.use_wandb:
                 wandb.save(str(path_to_best_model))
 
 
