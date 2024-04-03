@@ -1,7 +1,6 @@
 import numpy as np
-from sklearn.metrics import confusion_matrix, roc_auc_score
+from sklearn.metrics import confusion_matrix
 from typing import List
-from collections import Counter
 
 class BaseMetric:
     def __init__(self):
@@ -16,6 +15,7 @@ class BaseMetric:
         - preds: torch.Tensor of shape (batch_size, ...)
         - targets: torch.Tensor of shape (batch_size, ...)
         """
+        pass # do nothing by default for non-batch-wise metrics
 
     def compute_final(self):
         """
@@ -39,8 +39,8 @@ class ConfusionMatrixMetric(BaseMetric):
     
     def compute_final(self):
         self._cache['confusion_matrix'] = self.cumulative_cm
-        return self.cumulative_cm
-
+        return self.cumulative_cm.ravel()
+    
 class PrecisionMetric(BaseMetric):
     def compute_final(self):
         if 'confusion_matrix' not in self._cache:
@@ -189,14 +189,9 @@ class MetricsPipeline:
         - targets: torch.Tensor of shape (batch_size, ...)
         """
         # move to cpu
-        preds = preds.cpu().numpy()
-        targets = targets.cpu().numpy()
-        # get value counts of targets and preds
-        target_counts = Counter(targets.flatten())
-        pred_counts = Counter(preds.flatten())
-        print('target counts:', target_counts)
-        print('pred counts:', pred_counts)
-
+        preds = preds.cpu().view(-1).numpy()
+        targets = targets.cpu().view(-1).numpy()
+        
         for metric in self.metrics:
             metric.update(preds, targets)
 
