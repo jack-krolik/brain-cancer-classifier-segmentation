@@ -1,6 +1,7 @@
 import numpy as np
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from typing import List
+from collections import Counter
 
 class BaseMetric:
     def __init__(self):
@@ -33,7 +34,7 @@ class ConfusionMatrixMetric(BaseMetric):
         self.cumulative_cm = np.zeros((num_classes, num_classes))
 
     def update(self, preds, targets):
-        batch_cm = confusion_matrix(targets, preds, labels=range(self.num_classes))
+        batch_cm = confusion_matrix(targets, preds, labels=range(self.num_classes)) # what if preds have no positive class?
         self.cumulative_cm += batch_cm
     
     def compute_final(self):
@@ -130,6 +131,34 @@ class AccuracyMetric(BaseMetric):
         
         accuracy = np.nan_to_num(accuracy)
         return accuracy
+
+class AUCMetric(BaseMetric):
+    def compute_final(self):
+        raise NotImplementedError('AUCMetric is not implemented yet.')
+
+class IOUMetric(BaseMetric):
+    def compute_final(self):
+        if 'confusion_matrix' not in self._cache:
+            raise ValueError('Confusion matrix not found in _cache. Make sure to compute ConfusionMatrixMetric first.')
+        
+        cm = self._cache['confusion_matrix']
+        iou = self._compute_iou(cm)
+
+        self._cache['iou'] = iou
+
+        return iou
+    
+    def _compute_iou(self, cm):
+        if cm.shape[0] == 2:
+            _, fp, fn, tp = cm.ravel()
+        else:
+            tp = np.diag(cm)
+            fn = cm.sum(axis=1) - tp
+            fp = cm.sum(axis=0) - tp
+
+        iou = tp / (tp + fp + fn)
+        iou = np.nan_to_num(iou)
+        return np.mean(iou)
     
 
 class MetricsPipeline:
@@ -159,6 +188,15 @@ class MetricsPipeline:
         - preds: torch.Tensor of shape (batch_size, ...)
         - targets: torch.Tensor of shape (batch_size, ...)
         """
+        # move to cpu
+        preds = preds.cpu().numpy()
+        targets = targets.cpu().numpy()
+        # get value counts of targets and preds
+        target_counts = Counter(targets.flatten())
+        pred_counts = Counter(preds.flatten())
+        print('target counts:', target_counts)
+        print('pred counts:', pred_counts)
+
         for metric in self.metrics:
             metric.update(preds, targets)
 
