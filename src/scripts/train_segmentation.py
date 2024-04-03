@@ -3,15 +3,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import transforms
 from torchinfo import summary
-import torchmetrics
-from torchmetrics.classification import (
-    BinaryAccuracy,
-    BinaryAUROC,
-    BinaryF1Score,
-    BinaryPrecision,
-    BinaryRecall,
-    BinaryJaccardIndex,
-)
 from sklearn.model_selection import KFold
 from tqdm import trange, tqdm
 import argparse
@@ -29,6 +20,7 @@ from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
+import src.metrics as Metrics
 
 # TODO: Move this to a separate file
 
@@ -99,9 +91,9 @@ def get_train_config():
         help="Number of folds for cross validation (default: 5)",
     )
     parser.add_argument(
-        "--disable_wandb",
+        "--use_wandb",
         action="store_true",
-        help="Flag to disable logging to W&B (default: False)",
+        help="Flag to enable logging to W&B (default: False)",
     )
 
     # only allow options `box` and `llr` for now
@@ -133,7 +125,7 @@ def get_train_config():
         architecture=args.architecture,
         dataset=args.dataset,
         n_folds=args.n_folds,
-        disable_wandb=args.disable_wandb,
+        use_wandb=args.use_wandb,
         hyperparameters=hyperparams,
     )
 
@@ -145,7 +137,7 @@ def main_train_loop(
     optimizer: torch.optim.Optimizer,
     loss_fn: torch.nn.Module,
     config: dict,
-    metrics: torchmetrics.MetricCollection,
+    metrics: Metrics.MetricsPipeline,
     device: torch.device,
     logger=print,
 ) -> pathlib.Path:
@@ -158,7 +150,7 @@ def main_train_loop(
     - val_dataloader (DataLoader): the validation set dataloader
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
     - loss_fn (torch.nn.Module): the loss function being optimized
-    - metrics (torchmetrics.MetricCollection): the metrics to validate the model performance
+    - metrics (Metrics.MetricsPipeline): the metrics to validate the model performance
     - logger (Callable): the logger to use for logging (e.g. wandb.log, print, etc.)
 
     Returns:
@@ -181,7 +173,7 @@ def main_train_loop(
             )
 
             val_metrics = evaluate(
-                model, val_dataloader, loss_fn, config, metrics, device, pbar
+                model, val_dataloader, loss_fn, metrics, device, pbar
             )
 
             metrics_bundled = {
@@ -261,8 +253,7 @@ def evaluate(
     model: torch.nn.Module,
     val_dataloader: DataLoader,
     loss_fn: torch.nn.Module,
-    config: dict,
-    metrics: torchmetrics.MetricCollection,
+    metrics: Metrics.MetricsPipeline,
     device: torch.device,
     pbar: tqdm,
 ):
@@ -274,7 +265,7 @@ def evaluate(
     - dataloader (DataLoader): the validation set dataloader
     - loss_fn (torch.nn.Module): the loss function to use
     - config (TrainingConfig): the training configuration
-    - metrics (torchmetrics.MetricCollection): the metrics to track
+    - metrics (Metrics.MetricsPipeline): the metrics to track
     - device (torch.device): the device to use for evaluation
     - pbar (tqdm): the progress bar to update
     """
@@ -291,12 +282,12 @@ def evaluate(
 
             preds = output.detach().sigmoid().round()
 
-            computed_metrics = metrics(preds, masks)
+            computed_metrics = metrics.update(preds, masks)
             pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Validation"})
             pbar.update()
 
     total_metrics = (
-        metrics.compute()
+        metrics.compute_final()
     )  # Compute the metrics over the entire validation set
     return {"loss": cumalative_loss / len(val_dataloader), **total_metrics}
 
@@ -307,7 +298,7 @@ def main():
     device = training_config.device
 
     # Login to W&B
-    if not training_config.disable_wandb:
+    if training_config.use_wandb:
         wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
 
     # Define the augmentation pipeline for the dataset
@@ -355,16 +346,15 @@ def main():
 
     # Define Metrics to track (e.g. accuracy, precision, recall, etc.)
     # NOTE: Metrics are defined in the torchmetrics library however, custom metrics can be created if needed
-    metrics = torchmetrics.MetricCollection(
-        [
-            BinaryAUROC().to(device),
-            BinaryJaccardIndex().to(device),
-            BinaryAccuracy().to(device),
-            BinaryF1Score().to(device),
-            BinaryPrecision().to(device),
-            BinaryRecall().to(device),
-        ]
-    )
+    metrics = Metrics.MetricsPipeline([
+        Metrics.ConfusionMatrixMetric(num_classes=2), # NOTE: num_classes should be 2 for binary segmentation tasks CHANGE IF MULTICLASS
+        Metrics.AccuracyMetric(),
+        Metrics.PrecisionMetric(),
+        Metrics.RecallMetric(),
+        Metrics.F1ScoreMetric(),
+        Metrics.IOUMetric(),
+        # Metrics.AUCMetric(), # NOTE: AUCMetric is not implemented yet
+    ])
 
     # Train the model using k-fold cross validation
     for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
@@ -375,11 +365,11 @@ def main():
 
         with wandb_init(
             wandb_config,
-            disable_wandb=training_config.disable_wandb,
+            enabled_wandb=training_config.use_wandb,
             project=os.getenv("WANDB_PROJECT"),
             tags=["segmentation"],
         ):
-            if not training_config.disable_wandb:
+            if training_config.use_wandb:
                 config = wandb.config
                 assert verify_wandb_config(
                     config, training_config
@@ -389,7 +379,7 @@ def main():
 
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids)
+            train_sampler = SubsetRandomSampler(train_ids[:100]) # TODO: remove the 100 limit
             val_sampler = SubsetRandomSampler(val_ids)
 
             train_dataloader = DataLoader(
@@ -417,7 +407,7 @@ def main():
             if config.loss_fn == "BCEWithLogitsLoss":
                 loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
             
-            logger = wandb.log if not training_config.disable_wandb else print
+            logger = wandb.log if not training_config.use_wandb else print
 
             # Train the model
             path_to_best_model =  main_train_loop(
@@ -432,7 +422,7 @@ def main():
                 logger=logger,
             )
 
-            if not training_config.disable_wandb:
+            if not training_config.use_wandb:
                 wandb.save(str(path_to_best_model))
 
 
