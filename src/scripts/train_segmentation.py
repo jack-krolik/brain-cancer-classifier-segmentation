@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 import wandb
 import os
 from enum import StrEnum, auto
+from torchmetrics import MetricCollection
+from torchmetrics.classification import (
+    BinaryAUROC, BinaryAccuracy, Dice, BinaryPrecision, BinaryRecall
+)
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
@@ -19,7 +23,7 @@ from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
-import src.metrics as Metrics
+from src.metrics import BinaryIoU
 
 # TODO: Move this to a separate file
 
@@ -149,7 +153,7 @@ def main_train_loop(
     optimizer: torch.optim.Optimizer,
     loss_fn: torch.nn.Module,
     config: dict,
-    metrics: Metrics.MetricsPipeline,
+    metrics: MetricCollection,
     device: torch.device,
     logger=Logger,
 ) -> pathlib.Path:
@@ -162,7 +166,7 @@ def main_train_loop(
     - val_dataloader (DataLoader): the validation set dataloader
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
     - loss_fn (torch.nn.Module): the loss function being optimized
-    - metrics (Metrics.MetricsPipeline): the metrics to validate the model performance
+    - metrics (MetricCollection): the metrics to track
     - logger (Logger): the logger to use for tracking metrics
 
     Returns:
@@ -265,7 +269,7 @@ def evaluate(
     model: torch.nn.Module,
     val_dataloader: DataLoader,
     loss_fn: torch.nn.Module,
-    metrics: Metrics.MetricsPipeline,
+    metrics: MetricCollection,
     device: torch.device,
     pbar: tqdm,
 ):
@@ -277,7 +281,7 @@ def evaluate(
     - dataloader (DataLoader): the validation set dataloader
     - loss_fn (torch.nn.Module): the loss function to use
     - config (TrainingConfig): the training configuration
-    - metrics (Metrics.MetricsPipeline): the metrics to track
+    - metrics (MetricCollection): the metrics to track
     - device (torch.device): the device to use for evaluation
     - pbar (tqdm): the progress bar to update
     """
@@ -292,15 +296,20 @@ def evaluate(
             loss = loss_fn(output, masks)
             cumalative_loss += loss.item()
 
-            preds = output.detach().sigmoid().round()
+            preds = output.detach()
 
-            computed_metrics = metrics.update(preds, masks)
+            metrics(preds.cpu(), masks.type(torch.int32).cpu())
             pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Validation"})
             pbar.update()
 
     total_metrics = (
-        metrics.compute_final()
+        metrics.compute()
     )  # Compute the metrics over the entire validation set
+
+    # average metrics over samples
+    for metric_name, metric_value in total_metrics.items():
+        total_metrics[metric_name] = torch.mean(metric_value)
+
     return {"loss": cumalative_loss / len(val_dataloader), **total_metrics}
 
 
@@ -358,15 +367,16 @@ def main():
 
     # Define Metrics to track (e.g. accuracy, precision, recall, etc.)
     # NOTE: Metrics are defined in the torchmetrics library however, custom metrics can be created if needed
-    metrics = Metrics.MetricsPipeline([
-        Metrics.ConfusionMatrixMetric(num_classes=2), # NOTE: num_classes should be 2 for binary segmentation tasks CHANGE IF MULTICLASS
-        Metrics.AccuracyMetric(),
-        Metrics.PrecisionMetric(),
-        Metrics.RecallMetric(),
-        Metrics.F1ScoreMetric(),
-        Metrics.IOUMetric(),
-        # Metrics.AUCMetric(), # NOTE: AUCMetric is not implemented yet
-    ])
+    metrics = MetricCollection(
+        [
+            BinaryAUROC().cpu(),
+            BinaryIoU(multidim_average='samplewise', threshold=0.5).cpu(),
+            BinaryAccuracy().cpu(),
+            Dice(average='samples', threshold=0.5).cpu(),
+            BinaryPrecision(multidim_average='samplewise', threshold=0.5).cpu(),
+            BinaryRecall(multidim_average='samplewise', threshold=0.5).cpu()
+        ]
+    )
 
     # Train the model using k-fold cross validation
     for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
