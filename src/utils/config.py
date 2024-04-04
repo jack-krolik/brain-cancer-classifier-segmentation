@@ -4,6 +4,8 @@ import pathlib
 
 DATASET_BASE_DIR = pathlib.Path(__file__).parent.parent.parent / 'datasets'
 
+CUDA_SAFE_BATCH_SIZE = 4 # NOTE: This is the maximum batch size that can be used on my 3070 GPU (This value is hardcoded for now but should be made dynamic in the future)
+
 def get_device():
     """
     Get the device to use for training (cuda if available, then mps, then cpu)
@@ -22,6 +24,7 @@ class Hyperparameters:
     batch_size: int = 1
     learning_rate: float = 0.01
     n_epochs: int = 10
+    accumulation_steps: int = 1 # Gradient accumulation
     additional_params: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -36,6 +39,7 @@ class Hyperparameters:
             "n_epochs": self.n_epochs,
             "optimizer": self.optimizer,
             "loss_fn": self.loss_fn,
+            'accumulation_steps': self.accumulation_steps,
             **self.additional_params
         }
 
@@ -53,5 +57,12 @@ class TrainingConfig:
     def __post_init__(self):
         assert pathlib.Path(self.dataset_root_dir).exists(), f"Dataset root directory {self.dataset_root_dir} does not exist"
         assert self.n_folds > 0, "Number of folds must be greater than 0"
+
+        # check if device is cuda 
+        if self.device.type == 'cuda' and self.hyperparameters.batch_size > CUDA_SAFE_BATCH_SIZE:
+            assert self.hyperparameters.batch_size % CUDA_SAFE_BATCH_SIZE == 0, "Batch size must be a multiple of 4 for CUDA"
+            self.hyperparameters.accumulation_steps = self.hyperparameters.batch_size // CUDA_SAFE_BATCH_SIZE
+            self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
+
 
             

@@ -28,15 +28,12 @@ from src.metrics import BinaryIoU
 # TODO: Move this to a separate file
 
 """
-TODO: Write own metrics instead of using torchmetrics
 TODO: Class imbalance handling for LGG dataset
 TODO: Include information about total training time of folds (maybe make pbar more dynamic)
 TODO: Add a scheduler to adjust learning rate
 TODO: Look into checkpointing for training (e.g. save model every n epochs instead of just the best model)
-TODO: Look into Gradient Accumulation (e.g. accumulate gradients over multiple batches before updating the model) (useful for large batch sizes and not crashing GPU)
 TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for large models) (use torch.cuda.amp.autocast() and torch.cuda.amp.GradScaler()) (requires NVIDIA GPU with Tensor Cores)
 TODO: Include hyperparameter info in saved model file name
-TODO: Make general printing of metrics more dynamic and cleaner
 """
 
 # NOTE: This is a simple logger class that can be log metrics to either the console or W&B (however, this should be expanded to include all logging functionality)
@@ -246,13 +243,16 @@ def train(
     num_epochs = config.n_epochs
     model.train()
     cumalative_loss = 0
-    for imgs, masks in train_dataloader:
+    optimizer.zero_grad()
+    for i, (imgs, masks) in enumerate(train_dataloader):
         imgs, masks = imgs.to(device), masks.to(device)
-        optimizer.zero_grad()
         output = model(imgs)
         loss = loss_fn(output, masks)
         loss.backward()
-        optimizer.step()
+        if (i + 1) % config.accumulation_steps == 0: # Gradient accumulation
+            optimizer.step()
+            optimizer.zero_grad()
+
         cumalative_loss += loss.item()
 
         pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Train"})
