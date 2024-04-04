@@ -15,6 +15,7 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import (
     BinaryAUROC, BinaryAccuracy, Dice, BinaryPrecision, BinaryRecall
 )
+import datetime
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
@@ -34,6 +35,7 @@ TODO: Add a scheduler to adjust learning rate
 TODO: Look into checkpointing for training (e.g. save model every n epochs instead of just the best model)
 TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for large models) (use torch.cuda.amp.autocast() and torch.cuda.amp.GradScaler()) (requires NVIDIA GPU with Tensor Cores)
 TODO: Include hyperparameter info in saved model file name
+TODO: Allow single fold training (No KFold) this would be for training the final model
 """
 
 # NOTE: This is a simple logger class that can be log metrics to either the console or W&B (however, this should be expanded to include all logging functionality)
@@ -66,11 +68,8 @@ if not SAVE_MODEL_DIR.exists():
 
 """
 Key Notes for Later Improvements / Implementations Details:
-- NOTE: UNet paper uses SGD with momentum = 0.99 (this may be a good starting point for hyperparameter tuning)
 - NOTE: do we need a scheduler to adjust learning rate?
 - NOTE: UNet also introduces pre-computed weights for the loss function to handle class imbalance
-- NOTE: BCEWithLogitsLoss is used for binary segmentation tasks (like this one) and is a combination of Sigmoid and BCELoss
-- NOTE: Main benefit of BCEWithLogitsLoss is that it is numerically stable because it uses the log-sum-exp trick
 """
 
 
@@ -215,7 +214,6 @@ def main_train_loop(
                 best_eval_loss = val_loss
 
                 print(f"New best model saved at {best_model_path}")
-
     return best_model_path
 
 
@@ -378,6 +376,8 @@ def main():
         ]
     )
 
+    kfold_validation_elapsed_times = []
+
     # Train the model using k-fold cross validation
     for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
         print(f"Fold {fold}")
@@ -431,6 +431,8 @@ def main():
             
             logger = Logger(use_wandb=training_config.use_wandb)
 
+            start_time = datetime.datetime.now()
+
             # Train the model
             path_to_best_model = main_train_loop(
                 model,
@@ -444,8 +446,17 @@ def main():
                 logger=logger,
             )
 
+            kfold_validation_elapsed_times.append((datetime.datetime.now() - start_time).total_seconds())
+            # time in hours, minutes, seconds
+            fold_time_formatted = str(datetime.timedelta(seconds=kfold_validation_elapsed_times[-1]))
+            print(f"Total training time for fold {fold}: {fold_time_formatted}") 
+
             if training_config.use_wandb:
                 wandb.save(str(path_to_best_model))
+        
+    # time in hours, minutes, seconds
+    total_time_formatted = str(datetime.timedelta(seconds=sum(kfold_validation_elapsed_times)))
+    print(f"Total training time for all folds: {total_time_formatted}")
 
 
 if __name__ == "__main__":
