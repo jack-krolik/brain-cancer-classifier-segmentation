@@ -30,10 +30,12 @@ from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTra
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 
+
 # TODO: Move this to a separate file
 class DatasetType(StrEnum):
     BOX = auto()
     LGG = auto()
+
 
 # LOGIN TO W&B
 load_dotenv()
@@ -91,10 +93,10 @@ def get_train_config():
 
     # only allow options `box` and `llr` for now
     parser.add_argument(
-        '--dataset',
+        "--dataset",
         type=DatasetType,
         default=DatasetType.BOX,
-        help='Dataset to use for training (default: box) (options: box, lgg)',
+        help="Dataset to use for training (default: box) (options: box, lgg)",
     )
 
     parser.add_argument("--architecture", type=str, default="unet")
@@ -401,11 +403,11 @@ def main():
 
             if config.loss_fn == "BCEWithLogitsLoss":
                 loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
-            
+
             logger = wandb.log if not training_config.disable_wandb else print
 
             # Train the model
-            path_to_best_model =  main_train_loop(
+            path_to_best_model = main_train_loop(
                 model,
                 train_dataloader,
                 val_dataloader,
