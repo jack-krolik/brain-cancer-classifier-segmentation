@@ -25,16 +25,13 @@ from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 from src.metrics import BinaryIoU
 from src.utils.logging import WandbLogger, LocalLogger, LoggerMixin
 
-# TODO: Move this to a separate file
-
 """
 TODO: Class imbalance handling for LGG dataset
-TODO: Include information about total training time of folds (maybe make pbar more dynamic)
 TODO: Add a scheduler to adjust learning rate
 TODO: Look into checkpointing for training (e.g. save model every n epochs instead of just the best model)
 TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for large models) (use torch.cuda.amp.autocast() and torch.cuda.amp.GradScaler()) (requires NVIDIA GPU with Tensor Cores)
 TODO: Include hyperparameter info in saved model file name
-TODO: Allow single fold training (No KFold) this would be for training the final model
+TODO: Differentiate between test and validation set metrics (e.g. val_loss vs test_loss)
 """
 
 class DatasetType(StrEnum):
@@ -394,13 +391,86 @@ def build_model_from_config(config: TrainingConfig):
     
     return model, optimizer, loss_fn
 
+def k_fold_cross_validation(config: TrainingConfig, train_dataset, metrics, logger):
+    """
+    Perform k-fold cross validation on the given training dataset
+
+    Args:
+    - config (TrainingConfig): the training configuration
+    - train_dataset (Dataset): the training dataset
+    - metrics (MetricCollection): the metrics to track
+    - logger (LoggerMixin): logging object to track metrics, models, and visuals
+    """
+    # Create a KFold instance
+    kfold = KFold(
+        n_splits=config.n_folds,
+        shuffle=True,
+        random_state=config.random_state,
+    )
+
+    # Train the model using k-fold cross validation
+    for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
+        print(f"Fold {fold}")
+        print("---------------------------")
+
+        # randomly sample train and validation ids from the dataset based on the fold
+        train_sampler = SubsetRandomSampler(train_ids)
+        val_sampler = SubsetRandomSampler(val_ids)
+
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=config.batch_size, sampler=train_sampler
+        )
+        val_dataloader = DataLoader(
+            train_dataset, batch_size=config.batch_size, sampler=val_sampler
+        )
+
+        train_segmentation_model(config, train_dataloader, val_dataloader, metrics, logger)
+
+def train_segmentation_model(config: TrainingConfig, train_dataset, test_dataset, metrics, logger):
+    """
+    Train a segmentation model using the given configuration, datasets, metrics, and logger
+
+    Args:
+    - config (TrainingConfig): the training configuration
+    - train_dataset (Dataset): the training dataset
+    - test_dataset (Dataset): the testing dataset (or validation dataset if using k-fold cross validation)
+    - metrics (MetricCollection): the metrics to track
+    - logger (LoggerMixin): logging object to track metrics, models, and visuals
+    """
+    try:
+        logger.init()
+        config = Namespace(**config.flatten())
+        device = config.device
+
+        model, optimizer, loss_fn = build_model_from_config(config)
+        
+        # Train the model
+        path_to_best_model = main_train_loop(
+            model,
+            train_dataset,
+            test_dataset,
+            optimizer,
+            loss_fn,
+            config,
+            metrics,
+            device,
+            logger=logger,
+        )
+
+        # if config.use_wandb and config.save_model:
+        #     logger.save_model(str(path_to_best_model))
+
+    finally:
+        logger.finish()
+     
+
 def main():
     # Get the training configuration
     training_config = get_train_config()
     device = training_config.device
 
     if training_config.use_wandb:
-        logger = WandbLogger(training_config, os.getenv("WANDB_API_KEY"))
+        logger = WandbLogger(training_config, os.getenv("WANDB_API_KEY"), project_name=os.getenv("WANDB_PROJECT"), tags=["segmentation", training_config.architecture, training_config.dataset])
     else:
         logger = LocalLogger(training_config)
 
@@ -419,55 +489,11 @@ def main():
         ]
     )
 
-    # Create a KFold instance
-    kfold = KFold(
-        n_splits=training_config.n_folds,
-        shuffle=True,
-        random_state=training_config.random_state,
-    )
-
-    # Train the model using k-fold cross validation
-    for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
-        print(f"Fold {fold}")
-        print("---------------------------")
-
-        try:
-            logger.init(project=os.getenv("WANDB_PROJECT"), tags=["segmentation", training_config.architecture, training_config.dataset, f"fold_{fold}"])
-
-            config = Namespace(**training_config.flatten())
-
-            # TODO: determine how to bundle the dataset into a make method
-            # randomly sample train and validation ids from the dataset based on the fold
-            train_sampler = SubsetRandomSampler(train_ids)
-            val_sampler = SubsetRandomSampler(val_ids)
-
-            train_dataloader = DataLoader(
-                train_dataset, batch_size=config.batch_size, sampler=train_sampler
-            )
-            val_dataloader = DataLoader(
-                train_dataset, batch_size=config.batch_size, sampler=val_sampler
-            )
-
-            model, optimizer, loss_fn = build_model_from_config(training_config)
-            
-            # Train the model
-            path_to_best_model = main_train_loop(
-                model,
-                train_dataloader,
-                val_dataloader,
-                optimizer,
-                loss_fn,
-                config,
-                metrics,
-                device,
-                logger=logger,
-            )
-
-            # TODO: Currently, not model is saved for k-fold cross validation
-            # if training_config.use_wandb and training_config.save_model:
-            #     logger.save_model(str(path_to_best_model))
-        finally:
-            logger.finish()
+    # Train the model
+    if training_config.n_folds > 1:
+        k_fold_cross_validation(training_config, train_dataset, metrics, logger)
+    else:
+        train_segmentation_model(training_config, train_dataset, test_dataset, metrics, logger)
         
 
 if __name__ == "__main__":

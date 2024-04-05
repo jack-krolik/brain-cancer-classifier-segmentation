@@ -51,14 +51,16 @@ class LoggerMixin:
     
 
 class WandbLogger(LoggerMixin):
-    def __init__(self, config: TrainingConfig, wandb_API_key: str):
+    def __init__(self, config: TrainingConfig, wandb_API_key: str, project_name: str, tags: list):
         super().__init__(config)
+        self.project_name = project_name
+        self.tags = tags
 
         # Initialize wandb
         wandb.login(key=wandb_API_key, verify=True)
 
     def init(self, **kwargs):
-        self.run = wandb.init(config=self.config.flatten(), **kwargs)
+        self.run = wandb.init(config=self.config.flatten(), project=self.project_name, tags=self.tags, **kwargs)
 
     def finish(self):
         if self.run:

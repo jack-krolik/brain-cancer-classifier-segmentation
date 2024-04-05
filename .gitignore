@@ -1,6 +1,7 @@
 model_registry/
 datasets/
 wandb/
+logs/
 .DS_Store
 # don't push downloaded datasets please 
 
