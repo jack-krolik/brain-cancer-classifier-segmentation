@@ -4,7 +4,7 @@ import torch
 
 class BBoxLoss(nn.Module):
 
-    def __init__(self, class_loss_weight, reg_loss_weight):
+    def __init__(self, class_loss_weight=1, reg_loss_weight=1):
         super(BBoxLoss, self).__init__()
 
         self.class_loss_weight = class_loss_weight

@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from torchvision.ops import box_iou
 
 
 def center_to_corners_bbox(bboxes):
@@ -68,3 +69,38 @@ def generate_anchores(image_size, scales, aspect_ratios, feature_map_size):
                     anchor_boxes_corners.append([x_min, y_min, x_max, y_max])
 
     return np.array(anchor_boxes_centers), np.array(anchor_boxes_corners)
+
+
+def non_maximum_supression(preds, bbox_centers, threshold, min_prob):
+
+    # bbox: center to corner representation
+    bbox_corners = center_to_corners_bbox(bbox_centers)
+
+    # iou calculation
+    ious = box_iou(bbox_corners)
+
+    # highest to lowest confidence
+    indices = sorted(range(len(preds)), key=lambda i: preds[i], reverse=True)
+
+    # removing boxes below min threshold
+    indices = [idx for idx in indices if preds[idx] >= min_prob]
+
+    # non_max_supression
+    selected_indices = []
+    while indices:
+        # Select the box with the highest score and remove it from the list
+        current_index = indices.pop(0)
+        selected_indices.append(current_index)
+
+        boxes_to_keep = []
+        for index in indices:
+            # Calculate IoU between the current box and other boxes
+            iou = ious(ious[current_index, index])
+            # Keep the box if IoU is below the threshold
+            if iou < threshold:
+                boxes_to_keep.append(index)
+
+        # Update the list of remaining indices
+        indices = boxes_to_keep
+
+    return selected_indices
