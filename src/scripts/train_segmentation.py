@@ -8,14 +8,12 @@ import argparse
 from argparse import Namespace
 import pathlib
 from dotenv import load_dotenv
-import wandb
 import os
 from enum import StrEnum, auto
 from torchmetrics import MetricCollection
 from torchmetrics.classification import (
     BinaryAUROC, BinaryAccuracy, Dice, BinaryPrecision, BinaryRecall
 )
-import datetime
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
@@ -25,6 +23,7 @@ from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTra
 from src.utils.config import TrainingConfig, Hyperparameters
 from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 from src.metrics import BinaryIoU
+from src.utils.logging import WandbLogger, LocalLogger, LoggerMixin
 
 # TODO: Move this to a separate file
 
@@ -38,24 +37,12 @@ TODO: Include hyperparameter info in saved model file name
 TODO: Allow single fold training (No KFold) this would be for training the final model
 """
 
-# NOTE: This is a simple logger class that can be log metrics to either the console or W&B (however, this should be expanded to include all logging functionality)
-class Logger:
-    def __init__(self, use_wandb: bool):
-        self.use_wandb = use_wandb
-
-    def log_metrics(self, metrics_bundled: dict):
-        if self.use_wandb:
-            wandb.log(metrics_bundled)
-        else:
-            print('Metrics:')
-            for metric_name, metric_value in metrics_bundled.items():
-                print(f'{metric_name}: {metric_value}')
-
-
-
 class DatasetType(StrEnum):
     BOX = auto()
     LGG = auto()
+
+class SegmentationArchitecture(StrEnum):
+    UNET = auto()
 
 # LOGIN TO W&B
 load_dotenv()
@@ -94,7 +81,7 @@ def get_train_config():
         help="Learning rate (default: 0.01)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=10, help="Number of epochs to train (default: 10)"
+        "--n_epochs", type=int, default=10, help="Number of epochs to train (default: 10)"
     )
     parser.add_argument(
         "--n_folds",
@@ -116,7 +103,19 @@ def get_train_config():
         help='Dataset to use for training (default: box) (options: box, lgg)',
     )
 
-    parser.add_argument("--architecture", type=str, default="unet")
+    parser.add_argument(
+        "--architecture",
+        type=SegmentationArchitecture,
+        default=SegmentationArchitecture.UNET,
+        help="Segmentation architecture to use for training (default: unet) (options: unet)"
+    )
+
+    parser.add_argument(
+        "--save_model",
+        action="store_true",
+        help="Flag to save the best model (default: False). If k-fold cross validation is used, only the best model will be saved per fold",
+    )
+
     args = parser.parse_args()
 
     # TODO: accept more model architectures as input
@@ -129,7 +128,7 @@ def get_train_config():
         loss_fn="BCEWithLogitsLoss",
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        n_epochs=args.epochs,
+        n_epochs=args.n_epochs,
         additional_params={"momentum": 0.99},
     )
 
@@ -151,7 +150,7 @@ def main_train_loop(
     config: dict,
     metrics: MetricCollection,
     device: torch.device,
-    logger=Logger,
+    logger=LoggerMixin,
 ) -> pathlib.Path:
     """
     Main training loop for the model
@@ -310,58 +309,102 @@ def evaluate(
 
     return {"loss": cumalative_loss / len(val_dataloader), **total_metrics}
 
+def prepare_datasets(config: TrainingConfig):
+    """
+    Prepare the datasets for training
+
+    Args:
+    - config (TrainingConfig): the training configuration
+
+    Returns:
+    - Tuple[DataLoader, DataLoader]: the training and testing dataloaders
+    """
+    # Define the augmentation pipeline for the dataset
+
+    # NOTE: ALL AUGMENTATIONS SHOULD BE ADDED HERE
+    base_transforms = DualInputCompose(
+        [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
+    )
+
+    if config.dataset == DatasetType.BOX:
+        # Create Segmentation Dataset instance
+        train_dataset = BoxSegmentationDataset(
+            root_dir=config.dataset_root_dir,
+            split="train",
+            transform=base_transforms,
+        )
+        test_dataset = BoxSegmentationDataset(
+            root_dir=config.dataset_root_dir,
+            split="test",
+            transform=base_transforms,
+        )
+    elif config.dataset == DatasetType.LGG:
+        # Create Segmentation Dataset instance
+        train_dataset = LGGSegmentationDataset(
+            root_dir=config.dataset_root_dir,
+            split="train",
+            transform=base_transforms,
+        )
+        test_dataset = LGGSegmentationDataset(
+            root_dir=config.dataset_root_dir,
+            split="test",
+            transform=base_transforms,
+        )
+    else:
+        raise ValueError(f"Invalid dataset: {config.dataset}")
+
+    print(f"Train dataset length: {len(train_dataset)}")
+    print(f"Test dataset length: {len(test_dataset)}")
+    
+    return train_dataset, test_dataset
+
+def build_model_from_config(config: TrainingConfig):
+    """
+    Build model, optimizer, and loss function from the training configuration
+
+    Args:
+    - config (TrainingConfig): the training configuration
+
+    Returns:
+    - torch.nn.Module: the model to train
+    """
+
+    if config.architecture == "unet":
+        model = UNet()
+    else:
+        raise ValueError(f"Invalid architecture: {config.architecture}")
+    
+    if config.hyperparameters.optimizer == "SGD":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=config.hyperparameters.learning_rate,
+            momentum=config.hyperparameters.additional_params["momentum"],
+        )
+    else:
+        raise ValueError(f"Invalid optimizer: {config.hyperparameters.optimizer}")
+
+    if config.hyperparameters.loss_fn == "BCEWithLogitsLoss":
+        loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
+    else:
+        raise ValueError(f"Invalid loss function: {config.hyperparameters.loss_fn}")
+
+    # NOTE (TODO): Add more optimizers and loss functions as needed
+    # NOTE (TODO): Add more model architectures as needed
+    # NOTE: add scheduler to adjust learning rate
+    
+    return model, optimizer, loss_fn
 
 def main():
     # Get the training configuration
     training_config = get_train_config()
     device = training_config.device
 
-    # Login to W&B
     if training_config.use_wandb:
-        wandb.login(key=os.getenv("WANDB_API_KEY"), verify=True)
-
-    # Define the augmentation pipeline for the dataset
-    # TODO: Here is where augmentation should be added to the dataset
-    base_transforms = DualInputCompose(
-        [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
-    )
-
-    if training_config.dataset == DatasetType.BOX:
-        # Create Segmentation Dataset instance
-        train_dataset = BoxSegmentationDataset(
-            root_dir=training_config.dataset_root_dir,
-            split="train",
-            transform=base_transforms,
-        )
-        test_dataset = BoxSegmentationDataset(
-            root_dir=training_config.dataset_root_dir,
-            split="test",
-            transform=base_transforms,
-        )
-    elif training_config.dataset == DatasetType.LGG:
-        # Create Segmentation Dataset instance
-        train_dataset = LGGSegmentationDataset(
-            root_dir=training_config.dataset_root_dir,
-            split="train",
-            transform=base_transforms,
-        )
-        test_dataset = LGGSegmentationDataset(
-            root_dir=training_config.dataset_root_dir,
-            split="test",
-            transform=base_transforms,
-        )
+        logger = WandbLogger(training_config, os.getenv("WANDB_API_KEY"))
     else:
-        raise ValueError(f"Invalid dataset: {training_config.dataset}")
+        logger = LocalLogger(training_config)
 
-    print(f"Train dataset length: {len(train_dataset)}")
-    print(f"Test dataset length: {len(test_dataset)}")
-
-    # Create a KFold instance
-    kfold = KFold(
-        n_splits=training_config.n_folds,
-        shuffle=True,
-        random_state=training_config.random_state,
-    )
+    train_dataset, test_dataset = prepare_datasets(training_config)
 
     # Define Metrics to track (e.g. accuracy, precision, recall, etc.)
     # NOTE: Metrics are defined in the torchmetrics library however, custom metrics can be created if needed
@@ -376,28 +419,22 @@ def main():
         ]
     )
 
-    kfold_validation_elapsed_times = []
+    # Create a KFold instance
+    kfold = KFold(
+        n_splits=training_config.n_folds,
+        shuffle=True,
+        random_state=training_config.random_state,
+    )
 
     # Train the model using k-fold cross validation
     for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
         print(f"Fold {fold}")
         print("---------------------------")
 
-        wandb_config = create_wandb_config(training_config, {"fold": fold})
+        try:
+            logger.init(project=os.getenv("WANDB_PROJECT"), tags=["segmentation", training_config.architecture, training_config.dataset, f"fold_{fold}"])
 
-        with wandb_init(
-            wandb_config,
-            enabled_wandb=training_config.use_wandb,
-            project=os.getenv("WANDB_PROJECT"),
-            tags=["segmentation"],
-        ):
-            if training_config.use_wandb:
-                config = wandb.config
-                assert verify_wandb_config(
-                    config, training_config
-                ), "W&B config does not match training config"
-            else:
-                config = Namespace(**wandb_config)
+            config = Namespace(**training_config.flatten())
 
             # TODO: determine how to bundle the dataset into a make method
             # randomly sample train and validation ids from the dataset based on the fold
@@ -411,28 +448,8 @@ def main():
                 train_dataset, batch_size=config.batch_size, sampler=val_sampler
             )
 
-            if config.architecture == "unet":
-                model = UNet()
-            else:
-                raise ValueError(f"Invalid architecture: {config.architecture}")
-
-            if config.optimizer == "SGD":
-                optimizer = torch.optim.SGD(
-                    model.parameters(),
-                    lr=config.learning_rate,
-                    momentum=config.momentum,
-                )
-            else:
-                # NOTE: add more optimizers as needed
-                raise ValueError(f"Invalid optimizer: {config.optimizer}")
-
-            if config.loss_fn == "BCEWithLogitsLoss":
-                loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
+            model, optimizer, loss_fn = build_model_from_config(training_config)
             
-            logger = Logger(use_wandb=training_config.use_wandb)
-
-            start_time = datetime.datetime.now()
-
             # Train the model
             path_to_best_model = main_train_loop(
                 model,
@@ -446,18 +463,12 @@ def main():
                 logger=logger,
             )
 
-            kfold_validation_elapsed_times.append((datetime.datetime.now() - start_time).total_seconds())
-            # time in hours, minutes, seconds
-            fold_time_formatted = str(datetime.timedelta(seconds=kfold_validation_elapsed_times[-1]))
-            print(f"Total training time for fold {fold}: {fold_time_formatted}") 
-
-            if training_config.use_wandb:
-                wandb.save(str(path_to_best_model))
+            # TODO: Currently, not model is saved for k-fold cross validation
+            # if training_config.use_wandb and training_config.save_model:
+            #     logger.save_model(str(path_to_best_model))
+        finally:
+            logger.finish()
         
-    # time in hours, minutes, seconds
-    total_time_formatted = str(datetime.timedelta(seconds=sum(kfold_validation_elapsed_times)))
-    print(f"Total training time for all folds: {total_time_formatted}")
-
 
 if __name__ == "__main__":
     main()

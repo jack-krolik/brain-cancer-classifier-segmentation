@@ -64,5 +64,16 @@ class TrainingConfig:
             self.hyperparameters.accumulation_steps = self.hyperparameters.batch_size // CUDA_SAFE_BATCH_SIZE
             self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
 
+    def flatten(self):
+        return {
+            "architecture": self.architecture,
+            "dataset": self.dataset,
+            "n_folds": self.n_folds,
+            "random_state": self.random_state,
+            "device": self.device,
+            "dataset_root_dir": self.dataset_root_dir,
+            "use_wandb": self.use_wandb,
+            **self.hyperparameters.to_dict()
+        }
 
             
