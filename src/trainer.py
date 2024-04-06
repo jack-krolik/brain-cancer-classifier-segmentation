@@ -3,7 +3,6 @@ from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 from torchmetrics import MetricCollection
 import pathlib
 from tqdm import tqdm
-from argparse import Namespace
 from sklearn.model_selection import KFold
 
 from src.models.model_utils import build_model_from_config
@@ -17,7 +16,7 @@ def run_training_and_evaluation_cycle(
     val_dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: torch.nn.Module,
-    config: dict,
+    config: TrainingConfig,
     metrics: MetricCollection,
     device: torch.device,
     logger=LoggerMixin,
@@ -37,7 +36,7 @@ def run_training_and_evaluation_cycle(
     Returns:
     - pathlib.Path: the path to the best model
     """
-    num_epochs = config.n_epochs
+    num_epochs = config.hyperparameters.n_epochs
     total_steps = len(train_dataloader) + len(val_dataloader)
 
     model.to(device)
@@ -63,15 +62,12 @@ def run_training_and_evaluation_cycle(
             metrics_bundled["train_loss"] = (
                 train_loss  # add the training loss to the metrics
             )
-
+            print(metrics_bundled)
             logger.log_metrics(metrics_bundled)
 
-
             # NOTE: checkpoints not implemented
-            
 
     return metrics_bundled # last computed metrics
-
 
 def train(
     model: torch.nn.Module,
@@ -94,29 +90,26 @@ def train(
     - device (torch.device): the device to use for training
     - pbar (tqdm): the progress bar to update
     """
-    num_epochs = config.n_epochs
     model.train()
-    cumalative_loss = 0
+    cumulative_loss = 0
     optimizer.zero_grad()
     for i, (imgs, masks) in enumerate(train_dataloader):
         imgs, masks = imgs.to(device), masks.to(device)
         output = model(imgs)
         loss = loss_fn(output, masks)
         loss.backward()
-        if (i + 1) % config.accumulation_steps == 0: # Gradient accumulation
+        cumulative_loss += (loss.item() - cumulative_loss) / (i + 1)
+
+        if (i + 1) % config.hyperparameters.accumulation_steps == 0: # Gradient accumulation
             optimizer.step()
             optimizer.zero_grad()
 
-        cumalative_loss += loss.item()
-
-        pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Train"})
+        pbar.set_postfix({"Avg Train Loss": f"{cumulative_loss}", "Phase": "Train"})
         pbar.update()
 
     # TODO: Add a scheduler to adjust learning rate
 
-    train_loss = cumalative_loss / len(train_dataloader)
-
-    return train_loss
+    return cumulative_loss
 
 
 def evaluate(
@@ -143,17 +136,18 @@ def evaluate(
     # Reset the metrics
     metrics.reset()
     with torch.inference_mode():
-        cumalative_loss = 0
-        for imgs, masks in val_dataloader:
+        cumulative_loss = 0
+        for i, (imgs, masks) in enumerate(val_dataloader):
             imgs, masks = imgs.to(device), masks.to(device)
             output = model(imgs)
             loss = loss_fn(output, masks)
-            cumalative_loss += loss.item()
 
             preds = output.detach()
 
+            cumulative_loss += (loss.item() - cumulative_loss) / (i + 1)
+
             metrics(preds.cpu(), masks.type(torch.int32).cpu())
-            pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Validation"})
+            pbar.set_postfix({"Avg Val Loss": f"{cumulative_loss}", "Phase": "Validation"})
             pbar.update()
 
     total_metrics = (
@@ -162,9 +156,9 @@ def evaluate(
 
     # average metrics over samples
     for metric_name, metric_value in total_metrics.items():
-        total_metrics[metric_name] = torch.mean(metric_value)
+        total_metrics[metric_name] = torch.mean(metric_value).item()
 
-    return {"loss": cumalative_loss / len(val_dataloader), **total_metrics}
+    return {"loss": cumulative_loss, **total_metrics}
 
 def k_fold_cross_validation(config: TrainingConfig, train_dataset: Dataset, metrics: MetricCollection, logger: LoggerMixin):
     """
@@ -195,10 +189,10 @@ def k_fold_cross_validation(config: TrainingConfig, train_dataset: Dataset, metr
         val_sampler = SubsetRandomSampler(val_ids)
 
         train_dataloader = DataLoader(
-            train_dataset, batch_size=config.batch_size, sampler=train_sampler
+            train_dataset, batch_size=config.hyperparameters.batch_size, sampler=train_sampler
         )
         val_dataloader = DataLoader(
-            train_dataset, batch_size=config.batch_size, sampler=val_sampler
+            train_dataset, batch_size=config.hyperparameters.batch_size, sampler=val_sampler
         )
 
         train_metrics = train_model(config, train_dataloader, val_dataloader, metrics, logger)
@@ -224,7 +218,6 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
     """
     try:
         logger.init()
-        config = Namespace(**config.flatten())
         device = config.device
 
         model, optimizer, loss_fn = build_model_from_config(config)
@@ -241,8 +234,6 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
             device,
             logger=logger,
         )
-
-
     finally:
         logger.finish()
     

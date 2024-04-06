@@ -1,10 +1,11 @@
 import torch
+from typing import Tuple
 
 from src.utils.config import TrainingConfig
 from src.models.segmentation.unet import UNet
 
 
-def build_model_from_config(config: TrainingConfig):
+def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.nn.Module]:
     """
     Build model, optimizer, and loss function from the training configuration
 
@@ -12,7 +13,7 @@ def build_model_from_config(config: TrainingConfig):
     - config (TrainingConfig): the training configuration
 
     Returns:
-    - torch.nn.Module: the model to train
+    - torch.nn.Module: the model to train,
     """
 
     if config.architecture == "unet":

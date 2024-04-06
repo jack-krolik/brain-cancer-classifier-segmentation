@@ -1,10 +1,11 @@
 import pathlib
 import wandb
+import torch
 import uuid
 import json
+from typing import Dict
 
 from src.utils.config import TrainingConfig
-from src.utils.wandb import create_wandb_config
 
 LOGS_DIR = pathlib.Path(__file__).parent.parent.parent / "logs"
 
@@ -31,7 +32,7 @@ class LoggerMixin:
         """
         raise NotImplementedError("Method 'finish' not implemented.")
 
-    def log_metrics(self, metrics, step=None):
+    def log_metrics(self, metrics: Dict[str, float], step: int = None):
         """
         Log the metrics to the logger
 

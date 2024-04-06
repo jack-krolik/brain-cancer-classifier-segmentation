@@ -1,7 +1,6 @@
 import torch
 from torchvision import transforms
 import argparse
-import pathlib
 from dotenv import load_dotenv
 import os
 from enum import StrEnum, auto
@@ -17,7 +16,7 @@ from src.utils.config import TrainingConfig, Hyperparameters
 from src.metrics import BinaryIoU
 from src.utils.logging import WandbLogger, LocalLogger
 from src.data.datasets import prepare_datasets, DatasetType
-from src.trainer import train_segmentation_model, k_fold_cross_validation
+from src.trainer import k_fold_cross_validation, train_model
 
 """
 TODO: Class imbalance handling for LGG dataset
@@ -125,7 +124,6 @@ def get_train_config():
 def main():
     # Get the training configuration
     training_config = get_train_config()
-    device = training_config.device
 
     if training_config.use_wandb:
         logger = WandbLogger(training_config, os.getenv("WANDB_API_KEY"), project_name=os.getenv("WANDB_PROJECT"), tags=["segmentation", training_config.architecture, training_config.dataset])
@@ -155,7 +153,7 @@ def main():
     if training_config.n_folds > 1:
         k_fold_cross_validation(training_config, train_dataset, metrics, logger)
     else:
-        train_segmentation_model(training_config, train_dataset, test_dataset, metrics, logger)
+        train_model(training_config, train_dataset, test_dataset, metrics, logger)
         
 
 if __name__ == "__main__":
