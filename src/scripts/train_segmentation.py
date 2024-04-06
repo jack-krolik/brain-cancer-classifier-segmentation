@@ -1,11 +1,6 @@
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import transforms
-from sklearn.model_selection import KFold
-from tqdm import tqdm
 import argparse
-from argparse import Namespace
 import pathlib
 from dotenv import load_dotenv
 import os
@@ -17,13 +12,12 @@ from torchmetrics.classification import (
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
-from src.models.segmentation.unet import UNet
-from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
 from src.utils.transforms import DualInputCompose, DualInputResize, DualInputTransform
 from src.utils.config import TrainingConfig, Hyperparameters
-from src.utils.wandb import create_wandb_config, verify_wandb_config, wandb_init
 from src.metrics import BinaryIoU
-from src.utils.logging import WandbLogger, LocalLogger, LoggerMixin
+from src.utils.logging import WandbLogger, LocalLogger
+from src.data.datasets import prepare_datasets, DatasetType
+from src.trainer import train_segmentation_model, k_fold_cross_validation
 
 """
 TODO: Class imbalance handling for LGG dataset
@@ -34,21 +28,12 @@ TODO: Include hyperparameter info in saved model file name
 TODO: Differentiate between test and validation set metrics (e.g. val_loss vs test_loss)
 """
 
-class DatasetType(StrEnum):
-    BOX = auto()
-    LGG = auto()
-
 class SegmentationArchitecture(StrEnum):
     UNET = auto()
 
 # LOGIN TO W&B
 load_dotenv()
 
-
-SAVE_MODEL_DIR = pathlib.Path(__file__).parent.parent.parent / "model_registry"
-
-if not SAVE_MODEL_DIR.exists():
-    SAVE_MODEL_DIR.mkdir()
 
 """
 Key Notes for Later Improvements / Implementations Details:
@@ -137,333 +122,6 @@ def get_train_config():
         hyperparameters=hyperparams,
     )
 
-
-def main_train_loop(
-    model: torch.nn.Module,
-    train_dataloader: DataLoader,
-    val_dataloader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    loss_fn: torch.nn.Module,
-    config: dict,
-    metrics: MetricCollection,
-    device: torch.device,
-    logger=LoggerMixin,
-) -> pathlib.Path:
-    """
-    Main training loop for the model
-
-    Args:
-    - model (torch.nn.Module): the model to train
-    - train_dataloader (DataLoader): the training set dataloader
-    - val_dataloader (DataLoader): the validation set dataloader
-    - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
-    - loss_fn (torch.nn.Module): the loss function being optimized
-    - metrics (MetricCollection): the metrics to track
-    - logger (Logger): the logger to use for tracking metrics
-
-    Returns:
-    - pathlib.Path: the path to the best model
-    """
-    num_epochs = config.n_epochs
-    total_steps = len(train_dataloader) + len(val_dataloader)
-
-    model.to(device)
-
-    best_eval_loss = float("inf")
-    best_model_path = None
-
-    for epoch in range(num_epochs):
-        with tqdm(
-            total=total_steps, desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch"
-        ) as pbar:
-            train_loss = train(
-                model, train_dataloader, optimizer, loss_fn, config, device, pbar
-            )
-
-            val_metrics = evaluate(
-                model, val_dataloader, loss_fn, metrics, device, pbar
-            )
-
-            metrics_bundled = {
-                f"val_{metric_name}": metric_value
-                for metric_name, metric_value in val_metrics.items()
-            }
-            metrics_bundled["train_loss"] = (
-                train_loss  # add the training loss to the metrics
-            )
-
-            logger.log_metrics(metrics_bundled)
-
-            val_loss = metrics_bundled["val_loss"]
-
-            if val_loss < best_eval_loss:
-
-                if best_model_path is not None:  # remove the previous best model
-                    os.remove(best_model_path)
-
-                # save the best model locally
-                best_model_path = (
-                    SAVE_MODEL_DIR
-                    / f"best_{config.architecture}_{config.dataset}_fold_{config.fold}_model.h5"
-                )
-                torch.save(model.state_dict(), best_model_path)
-                best_eval_loss = val_loss
-
-                print(f"New best model saved at {best_model_path}")
-    return best_model_path
-
-
-def train(
-    model: torch.nn.Module,
-    train_dataloader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    loss_fn: torch.nn.Module,
-    config: dict,
-    device: torch.device,
-    pbar: tqdm,
-):
-    """
-    Train the model on the training set
-
-    Args:
-    - model (torch.nn.Module): the model to train
-    - train_dataloader (DataLoader): the training set dataloader
-    - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
-    - loss_fn (torch.nn.Module): the loss function being optimized
-    - config (dict): the wandb configuration for the training
-    - device (torch.device): the device to use for training
-    - pbar (tqdm): the progress bar to update
-    """
-    num_epochs = config.n_epochs
-    model.train()
-    cumalative_loss = 0
-    optimizer.zero_grad()
-    for i, (imgs, masks) in enumerate(train_dataloader):
-        imgs, masks = imgs.to(device), masks.to(device)
-        output = model(imgs)
-        loss = loss_fn(output, masks)
-        loss.backward()
-        if (i + 1) % config.accumulation_steps == 0: # Gradient accumulation
-            optimizer.step()
-            optimizer.zero_grad()
-
-        cumalative_loss += loss.item()
-
-        pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Train"})
-        pbar.update()
-
-    # TODO: Add a scheduler to adjust learning rate
-
-    train_loss = cumalative_loss / len(train_dataloader)
-
-    return train_loss
-
-
-def evaluate(
-    model: torch.nn.Module,
-    val_dataloader: DataLoader,
-    loss_fn: torch.nn.Module,
-    metrics: MetricCollection,
-    device: torch.device,
-    pbar: tqdm,
-):
-    """
-    Evaluate the model on the validation set
-
-    Args:
-    - model (torch.nn.Module): the model to evaluate
-    - dataloader (DataLoader): the validation set dataloader
-    - loss_fn (torch.nn.Module): the loss function to use
-    - config (TrainingConfig): the training configuration
-    - metrics (MetricCollection): the metrics to track
-    - device (torch.device): the device to use for evaluation
-    - pbar (tqdm): the progress bar to update
-    """
-    model.eval()
-    # Reset the metrics
-    metrics.reset()
-    with torch.inference_mode():
-        cumalative_loss = 0
-        for imgs, masks in val_dataloader:
-            imgs, masks = imgs.to(device), masks.to(device)
-            output = model(imgs)
-            loss = loss_fn(output, masks)
-            cumalative_loss += loss.item()
-
-            preds = output.detach()
-
-            metrics(preds.cpu(), masks.type(torch.int32).cpu())
-            pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Phase": "Validation"})
-            pbar.update()
-
-    total_metrics = (
-        metrics.compute()
-    )  # Compute the metrics over the entire validation set
-
-    # average metrics over samples
-    for metric_name, metric_value in total_metrics.items():
-        total_metrics[metric_name] = torch.mean(metric_value)
-
-    return {"loss": cumalative_loss / len(val_dataloader), **total_metrics}
-
-def prepare_datasets(config: TrainingConfig):
-    """
-    Prepare the datasets for training
-
-    Args:
-    - config (TrainingConfig): the training configuration
-
-    Returns:
-    - Tuple[DataLoader, DataLoader]: the training and testing dataloaders
-    """
-    # Define the augmentation pipeline for the dataset
-
-    # NOTE: ALL AUGMENTATIONS SHOULD BE ADDED HERE
-    base_transforms = DualInputCompose(
-        [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
-    )
-
-    if config.dataset == DatasetType.BOX:
-        # Create Segmentation Dataset instance
-        train_dataset = BoxSegmentationDataset(
-            root_dir=config.dataset_root_dir,
-            split="train",
-            transform=base_transforms,
-        )
-        test_dataset = BoxSegmentationDataset(
-            root_dir=config.dataset_root_dir,
-            split="test",
-            transform=base_transforms,
-        )
-    elif config.dataset == DatasetType.LGG:
-        # Create Segmentation Dataset instance
-        train_dataset = LGGSegmentationDataset(
-            root_dir=config.dataset_root_dir,
-            split="train",
-            transform=base_transforms,
-        )
-        test_dataset = LGGSegmentationDataset(
-            root_dir=config.dataset_root_dir,
-            split="test",
-            transform=base_transforms,
-        )
-    else:
-        raise ValueError(f"Invalid dataset: {config.dataset}")
-
-    print(f"Train dataset length: {len(train_dataset)}")
-    print(f"Test dataset length: {len(test_dataset)}")
-    
-    return train_dataset, test_dataset
-
-def build_model_from_config(config: TrainingConfig):
-    """
-    Build model, optimizer, and loss function from the training configuration
-
-    Args:
-    - config (TrainingConfig): the training configuration
-
-    Returns:
-    - torch.nn.Module: the model to train
-    """
-
-    if config.architecture == "unet":
-        model = UNet()
-    else:
-        raise ValueError(f"Invalid architecture: {config.architecture}")
-    
-    if config.hyperparameters.optimizer == "SGD":
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=config.hyperparameters.learning_rate,
-            momentum=config.hyperparameters.additional_params["momentum"],
-        )
-    else:
-        raise ValueError(f"Invalid optimizer: {config.hyperparameters.optimizer}")
-
-    if config.hyperparameters.loss_fn == "BCEWithLogitsLoss":
-        loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
-    else:
-        raise ValueError(f"Invalid loss function: {config.hyperparameters.loss_fn}")
-
-    # NOTE (TODO): Add more optimizers and loss functions as needed
-    # NOTE (TODO): Add more model architectures as needed
-    # NOTE: add scheduler to adjust learning rate
-    
-    return model, optimizer, loss_fn
-
-def k_fold_cross_validation(config: TrainingConfig, train_dataset, metrics, logger):
-    """
-    Perform k-fold cross validation on the given training dataset
-
-    Args:
-    - config (TrainingConfig): the training configuration
-    - train_dataset (Dataset): the training dataset
-    - metrics (MetricCollection): the metrics to track
-    - logger (LoggerMixin): logging object to track metrics, models, and visuals
-    """
-    # Create a KFold instance
-    kfold = KFold(
-        n_splits=config.n_folds,
-        shuffle=True,
-        random_state=config.random_state,
-    )
-
-    # Train the model using k-fold cross validation
-    for fold, (train_ids, val_ids) in enumerate(kfold.split(train_dataset)):
-        print(f"Fold {fold}")
-        print("---------------------------")
-
-        # randomly sample train and validation ids from the dataset based on the fold
-        train_sampler = SubsetRandomSampler(train_ids)
-        val_sampler = SubsetRandomSampler(val_ids)
-
-        train_dataloader = DataLoader(
-            train_dataset, batch_size=config.batch_size, sampler=train_sampler
-        )
-        val_dataloader = DataLoader(
-            train_dataset, batch_size=config.batch_size, sampler=val_sampler
-        )
-
-        train_segmentation_model(config, train_dataloader, val_dataloader, metrics, logger)
-
-def train_segmentation_model(config: TrainingConfig, train_dataset, test_dataset, metrics, logger):
-    """
-    Train a segmentation model using the given configuration, datasets, metrics, and logger
-
-    Args:
-    - config (TrainingConfig): the training configuration
-    - train_dataset (Dataset): the training dataset
-    - test_dataset (Dataset): the testing dataset (or validation dataset if using k-fold cross validation)
-    - metrics (MetricCollection): the metrics to track
-    - logger (LoggerMixin): logging object to track metrics, models, and visuals
-    """
-    try:
-        logger.init()
-        config = Namespace(**config.flatten())
-        device = config.device
-
-        model, optimizer, loss_fn = build_model_from_config(config)
-        
-        # Train the model
-        path_to_best_model = main_train_loop(
-            model,
-            train_dataset,
-            test_dataset,
-            optimizer,
-            loss_fn,
-            config,
-            metrics,
-            device,
-            logger=logger,
-        )
-
-        # if config.use_wandb and config.save_model:
-        #     logger.save_model(str(path_to_best_model))
-
-    finally:
-        logger.finish()
-     
-
 def main():
     # Get the training configuration
     training_config = get_train_config()
@@ -474,7 +132,11 @@ def main():
     else:
         logger = LocalLogger(training_config)
 
-    train_dataset, test_dataset = prepare_datasets(training_config)
+    base_transforms = DualInputCompose(
+        [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
+    )
+
+    train_dataset, test_dataset = prepare_datasets(training_config, base_transforms)
 
     # Define Metrics to track (e.g. accuracy, precision, recall, etc.)
     # NOTE: Metrics are defined in the torchmetrics library however, custom metrics can be created if needed
@@ -488,7 +150,7 @@ def main():
             BinaryRecall(multidim_average='samplewise', threshold=0.5).cpu()
         ]
     )
-
+    
     # Train the model
     if training_config.n_folds > 1:
         k_fold_cross_validation(training_config, train_dataset, metrics, logger)
