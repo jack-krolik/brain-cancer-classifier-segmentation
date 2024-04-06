@@ -1,8 +1,12 @@
 import torch
 from typing import Tuple
+from enum import auto, StrEnum
 
 from src.utils.config import TrainingConfig
 from src.models.segmentation.unet import UNet
+
+class SegmentationArchitecture(StrEnum):
+    UNET = auto()
 
 
 def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.nn.Module]:

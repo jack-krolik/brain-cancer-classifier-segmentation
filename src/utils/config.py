@@ -58,11 +58,18 @@ class TrainingConfig:
         assert pathlib.Path(self.dataset_root_dir).exists(), f"Dataset root directory {self.dataset_root_dir} does not exist"
         assert self.n_folds > 0, "Number of folds must be greater than 0"
 
+        batch_size = self.hyperparameters.batch_size
+
         # check if device is cuda 
-        if self.device.type == 'cuda' and self.hyperparameters.batch_size > CUDA_SAFE_BATCH_SIZE:
-            assert self.hyperparameters.batch_size % CUDA_SAFE_BATCH_SIZE == 0, "Batch size must be a multiple of 4 for CUDA"
-            self.hyperparameters.accumulation_steps = self.hyperparameters.batch_size // CUDA_SAFE_BATCH_SIZE
+        if self.device.type == 'cuda' and batch_size > CUDA_SAFE_BATCH_SIZE:
+            accumulation_steps = ((batch_size + CUDA_SAFE_BATCH_SIZE - 1) // CUDA_SAFE_BATCH_SIZE)
+            print(f"""
+            Batch size {batch_size} is too large for the current device. 
+            Splitting the batch into {accumulation_steps} steps of {CUDA_SAFE_BATCH_SIZE} samples each.
+            """)
+
             self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
+            self.hyperparameters.accumulation_steps = accumulation_steps
 
     def flatten(self):
         return {

@@ -1,9 +1,11 @@
 import torch
+import numpy as np
 from torchvision import transforms
 import argparse
 from dotenv import load_dotenv
 import os
-from enum import StrEnum, auto
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Subset
 from torchmetrics import MetricCollection
 from torchmetrics.classification import (
     BinaryAUROC, BinaryAccuracy, Dice, BinaryPrecision, BinaryRecall
@@ -17,6 +19,7 @@ from src.metrics import BinaryIoU
 from src.utils.logging import WandbLogger, LocalLogger
 from src.data.datasets import prepare_datasets, DatasetType
 from src.trainer import k_fold_cross_validation, train_model
+from src.models.model_utils import SegmentationArchitecture
 
 """
 TODO: Class imbalance handling for LGG dataset
@@ -26,9 +29,6 @@ TODO: Look into AMP (Automatic Mixed Precision) for faster training (useful for 
 TODO: Include hyperparameter info in saved model file name
 TODO: Differentiate between test and validation set metrics (e.g. val_loss vs test_loss)
 """
-
-class SegmentationArchitecture(StrEnum):
-    UNET = auto()
 
 # LOGIN TO W&B
 load_dotenv()
@@ -153,7 +153,12 @@ def main():
     if training_config.n_folds > 1:
         k_fold_cross_validation(training_config, train_dataset, metrics, logger)
     else:
-        train_model(training_config, train_dataset, test_dataset, metrics, logger)
+        val_size = 0.2
+        train_dataset_size = len(train_dataset)
+        train_idx, val_idx = train_test_split(np.arange(train_dataset_size), test_size=val_size, random_state=training_config.random_state)
+        sub_train_dataset = Subset(train_dataset, train_idx)
+        val_dataset = Subset(train_dataset, val_idx)
+        train_model(training_config, sub_train_dataset, val_dataset, metrics, logger)
         
 
 if __name__ == "__main__":
