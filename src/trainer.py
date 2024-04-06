@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchmetrics import MetricCollection
 import pathlib
 from tqdm import tqdm
@@ -184,18 +184,10 @@ def k_fold_cross_validation(config: TrainingConfig, train_dataset: Dataset, metr
         print(f"Fold {fold}")
         print("---------------------------")
 
-        # randomly sample train and validation ids from the dataset based on the fold
-        train_sampler = SubsetRandomSampler(train_ids)
-        val_sampler = SubsetRandomSampler(val_ids)
+        sub_train_dataset = Subset(train_dataset, train_ids)
+        val_dataset = Subset(train_dataset, val_ids)
 
-        train_dataloader = DataLoader(
-            train_dataset, batch_size=config.hyperparameters.batch_size, sampler=train_sampler
-        )
-        val_dataloader = DataLoader(
-            train_dataset, batch_size=config.hyperparameters.batch_size, sampler=val_sampler
-        )
-
-        train_metrics = train_model(config, train_dataloader, val_dataloader, metrics, logger)
+        train_metrics = train_model(config, sub_train_dataset, val_dataset, metrics, logger)
 
         for metric_name, metric_value in train_metrics.items():
             if metric_name in avg_metrics:
@@ -217,16 +209,24 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
     - logger (LoggerMixin): logging object to track metrics, models, and visuals
     """
     try:
-        logger.init()
+        run_name = f"{config.architecture}_{config.dataset}"
+        logger.init(name=run_name)
         device = config.device
+
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=config.hyperparameters.batch_size
+        )
+        test_dataloader = DataLoader(
+            test_dataset, batch_size=config.hyperparameters.batch_size
+        )
 
         model, optimizer, loss_fn = build_model_from_config(config)
         
         # Train the model
         computed_metrics = run_training_and_evaluation_cycle(
             model,
-            train_dataset,
-            test_dataset,
+            train_dataloader,
+            test_dataloader,
             optimizer,
             loss_fn,
             config,
@@ -235,6 +235,7 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
             logger=logger,
         )
     finally:
+        logger.plot_metrics()
         logger.finish()
     
     return computed_metrics
