@@ -20,3 +20,4 @@ dependencies:
   - wandb
   - pytorch
   - pytorch-cuda=12.1
+  - bayesian-optimization
