@@ -90,8 +90,8 @@ def tune_with_bay_opt(config: TrainingConfig):
 
     # Define the hyperparameter search space
     pbounds = {
-        "lr": (1e-9, 1e-2),
-        "batch_size": (4, 20),
+        "lr": (1e-4, 1e-2),
+        "batch_size": (4, 16),
     }
 
     optimizer = BayesianOptimization(
@@ -102,7 +102,7 @@ def tune_with_bay_opt(config: TrainingConfig):
 
     optimizer.maximize(
         init_points=3,
-        n_iter=3,
+        n_iter=5,
     )
 
     print(optimizer.max)
@@ -115,14 +115,14 @@ if __name__ == "__main__":
         loss_fn="BCEWithLogitsLoss",
         batch_size=4,
         learning_rate=1e-3,
-        n_epochs=5,
+        n_epochs=15,
         additional_params={"momentum": 0.99},
     )
 
     training_config = TrainingConfig(
         architecture= SegmentationArchitecture.UNET,
         dataset=DatasetType.BOX,
-        n_folds=1,
+        n_folds=2,
         use_wandb=False,
         hyperparameters=hyperparams,
     )
