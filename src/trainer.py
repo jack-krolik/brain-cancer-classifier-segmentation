@@ -4,6 +4,7 @@ from torchmetrics import MetricCollection
 import pathlib
 from tqdm import tqdm
 from sklearn.model_selection import KFold
+from typing import Optional
 
 from src.models.model_utils import build_model_from_config
 from src.utils.config import TrainingConfig
@@ -15,6 +16,7 @@ def run_training_and_evaluation_cycle(
     train_dataloader: DataLoader,
     val_dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
+    lr_scheduler: Optional[torch.optim.lr_scheduler.LRScheduler],
     loss_fn: torch.nn.Module,
     config: TrainingConfig,
     metrics: MetricCollection,
@@ -29,6 +31,7 @@ def run_training_and_evaluation_cycle(
     - train_dataloader (DataLoader): the training set dataloader
     - val_dataloader (DataLoader): the validation set dataloader
     - optimizer (torch.optim.Optimizer): the optimizer algorithm (e.g. SGD, Adam, etc.)
+    - lr_scheduler (torch.optim.lr_scheduler.LRScheduler): the learning rate scheduler
     - loss_fn (torch.nn.Module): the loss function being optimized
     - metrics (MetricCollection): the metrics to track
     - logger (Logger): the logger to use for tracking metrics
@@ -66,6 +69,14 @@ def run_training_and_evaluation_cycle(
             logger.log_metrics(metrics_bundled)
 
             # NOTE: checkpoints not implemented
+        
+        if (epoch + 1) in config.checkpoints:
+            # save the model
+            logger.save_model(model, f'model_checkpoint_{epoch+1}')
+            print(f"Model checkpoint saved at epoch {epoch+1}")
+    
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
     return metrics_bundled # last computed metrics
 
@@ -220,7 +231,7 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
             test_dataset, batch_size=config.hyperparameters.batch_size
         )
 
-        model, optimizer, loss_fn = build_model_from_config(config)
+        model, optimizer, lr_scheduler, loss_fn = build_model_from_config(config)
         
         # Train the model
         computed_metrics = run_training_and_evaluation_cycle(
@@ -228,6 +239,7 @@ def train_model(config: TrainingConfig, train_dataset: Dataset, test_dataset: Da
             train_dataloader,
             test_dataloader,
             optimizer,
+            lr_scheduler,
             loss_fn,
             config,
             metrics,

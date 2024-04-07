@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import torch
 import pathlib
+from enum import auto, StrEnum
 
 DATASET_BASE_DIR = pathlib.Path(__file__).parent.parent.parent / 'datasets'
 
@@ -19,8 +20,9 @@ def get_device():
 
 @dataclass
 class Hyperparameters:
-    optimizer: str 
+    optimizer: "Optimizer" 
     loss_fn: str
+    scheduler: str = None
     batch_size: int = 1
     learning_rate: float = 0.01
     n_epochs: int = 10
@@ -31,6 +33,9 @@ class Hyperparameters:
         assert self.batch_size > 0, "Batch size must be greater than 0"
         assert self.learning_rate > 0, "Learning rate must be greater than 0"
         assert self.n_epochs > 0, "Number of epochs must be greater than 0"
+        assert self.accumulation_steps > 0, "Accumulation steps must be greater than 0"
+        assert Optimizer.is_optimizer(self.optimizer), f"Invalid optimizer: {self.optimizer}"
+        assert self.scheduler is None or LRScheduler.is_scheduler(self.scheduler), f"Invalid scheduler: {self.scheduler}"
 
     def to_dict(self):
         return {
@@ -52,11 +57,13 @@ class TrainingConfig:
     device: torch.device = field(default_factory=lambda: get_device())
     dataset_root_dir: str = DATASET_BASE_DIR
     use_wandb: bool = False
+    n_checkpoints: int = 1
     hyperparameters: Hyperparameters = field(default_factory=Hyperparameters)
 
     def __post_init__(self):
         assert pathlib.Path(self.dataset_root_dir).exists(), f"Dataset root directory {self.dataset_root_dir} does not exist"
         assert self.n_folds > 0, "Number of folds must be greater than 0"
+        assert self.n_checkpoints > 0 and self.n_checkpoints <= self.hyperparameters.n_epochs, "Number of checkpoints must be greater than 0 and less than or equal to the number of epochs"
 
         batch_size = self.hyperparameters.batch_size
 
@@ -70,6 +77,12 @@ class TrainingConfig:
 
             self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
             self.hyperparameters.accumulation_steps = accumulation_steps
+        
+        # determine epochs to save model based on number of checkpoints
+        save_every = self.hyperparameters.n_epochs // self.n_checkpoints
+        checkpoint_epochs = [save_every * i for i in range(1, self.n_checkpoints + 1)]
+        checkpoint_epochs[-1] = self.hyperparameters.n_epochs
+        self.checkpoints = checkpoint_epochs
 
     def flatten(self):
         return {
@@ -82,5 +95,44 @@ class TrainingConfig:
             "use_wandb": self.use_wandb,
             **self.hyperparameters.to_dict()
         }
-
             
+class Optimizer(StrEnum):
+    SGD = auto()
+
+    # class method to build optimizer with type, config, and model
+    @classmethod
+    def build(cls, optimizer_type: str, config: TrainingConfig, model: torch.nn.Module):
+        if optimizer_type == cls.SGD:
+            return torch.optim.SGD(
+                model.parameters(),
+                lr=config.hyperparameters.learning_rate,
+                momentum=config.hyperparameters.additional_params["momentum"],
+            )
+        else:
+            raise ValueError(f"Invalid optimizer: {config.hyperparameters.optimizer}")
+    
+    @classmethod
+    def is_optimizer(cls, optimizer_type: str):
+        return optimizer_type in [o.value for o in cls]
+
+class LRScheduler(StrEnum):
+    StepLR = auto()
+
+    # class method to build scheduler with type, optimizer, and config
+    @classmethod
+    def build(cls, scheduler_type: str, optimizer: torch.optim.Optimizer, config: TrainingConfig):
+        if scheduler_type is None:
+            return None
+        elif scheduler_type == cls.StepLR:
+            return torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=config.hyperparameters.additional_params["step_size"],
+                gamma=config.hyperparameters.additional_params["gamma"],
+            )
+        else:
+            raise ValueError(f"Invalid scheduler: {config.hyperparameters.scheduler}")
+    
+    @classmethod
+    def is_scheduler(cls, scheduler_type: str):
+        return scheduler_type in [s.value for s in cls]
+

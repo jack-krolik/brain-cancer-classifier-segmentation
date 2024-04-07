@@ -1,17 +1,16 @@
 import torch
-from typing import Tuple
+from typing import Tuple, Optional
 from enum import auto, StrEnum
 
-from src.utils.config import TrainingConfig
+from src.utils.config import TrainingConfig, Optimizer, LRScheduler
 from src.models.segmentation.unet import UNet
 
 class SegmentationArchitecture(StrEnum):
     UNET = auto()
 
-
-def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.nn.Module]:
+def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, torch.optim.Optimizer, Optional[torch.optim.lr_scheduler.LRScheduler], torch.nn.Module]:
     """
-    Build model, optimizer, and loss function from the training configuration
+    Build model, optimizer, lr scheduler, and loss function from the training configuration
 
     Args:
     - config (TrainingConfig): the training configuration
@@ -25,14 +24,8 @@ def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, to
     else:
         raise ValueError(f"Invalid architecture: {config.architecture}")
     
-    if config.hyperparameters.optimizer == "SGD":
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=config.hyperparameters.learning_rate,
-            momentum=config.hyperparameters.additional_params["momentum"],
-        )
-    else:
-        raise ValueError(f"Invalid optimizer: {config.hyperparameters.optimizer}")
+    optimizer = Optimizer.build(config.hyperparameters.optimizer, config, model)
+    lr_scheduler = LRScheduler.build(config.hyperparameters.scheduler, optimizer, config)
 
     if config.hyperparameters.loss_fn == "BCEWithLogitsLoss":
         loss_fn = torch.nn.BCEWithLogitsLoss(reduction="mean")
@@ -43,4 +36,4 @@ def build_model_from_config(config: TrainingConfig) -> Tuple[torch.nn.Module, to
     # NOTE (TODO): Add more model architectures as needed
     # NOTE: add scheduler to adjust learning rate
     
-    return model, optimizer, loss_fn
+    return model, optimizer, lr_scheduler, loss_fn
