@@ -63,6 +63,7 @@ class TrainingConfig:
     def __post_init__(self):
         assert pathlib.Path(self.dataset_root_dir).exists(), f"Dataset root directory {self.dataset_root_dir} does not exist"
         assert self.n_folds > 0, "Number of folds must be greater than 0"
+        assert self.n_checkpoints > 0 and self.n_checkpoints <= self.hyperparameters.n_epochs, "Number of checkpoints must be greater than 0 and less than or equal to the number of epochs"
 
         batch_size = self.hyperparameters.batch_size
 
