@@ -69,6 +69,11 @@ def run_training_and_evaluation_cycle(
             logger.log_metrics(metrics_bundled)
 
             # NOTE: checkpoints not implemented
+        
+        if (epoch + 1) in config.checkpoints:
+            # save the model
+            logger.save_model(model, f'model_checkpoint_{epoch+1}')
+            print(f"Model checkpoint saved at epoch {epoch+1}")
     
         if lr_scheduler is not None:
             lr_scheduler.step()

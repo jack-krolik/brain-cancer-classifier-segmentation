@@ -104,6 +104,13 @@ def get_train_config():
         help='Learning rate scheduler to use for training (default: None) (options: None, StepLR)',
     )
 
+    parser.add_argument(
+        "--n_checkpoints",
+        type=int,
+        default=1,
+        help="Number of checkpoints to save during training (default: 1)",
+    )
+
     args = parser.parse_args()
 
     # TODO: accept more model architectures as input
@@ -131,6 +138,7 @@ def get_train_config():
         architecture=args.architecture,
         dataset=args.dataset,
         n_folds=args.n_folds,
+        n_checkpoints=args.n_checkpoints,
         use_wandb=args.use_wandb,
         hyperparameters=hyperparams,
     )
@@ -142,7 +150,7 @@ def main():
     if training_config.use_wandb:
         logger = WandbLogger(training_config, os.getenv("WANDB_API_KEY"), project_name=os.getenv("WANDB_PROJECT"), tags=["segmentation", training_config.architecture, training_config.dataset])
     else:
-        logger = LocalLogger(training_config, run_group=f"Train Segmentation {training_config.architecture} {training_config.dataset} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger = LocalLogger(training_config, run_group=f"Train Segmentation {training_config.architecture} {training_config.dataset} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", checkpointing=True)
     
 
 

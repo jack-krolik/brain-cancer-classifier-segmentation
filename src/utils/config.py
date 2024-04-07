@@ -57,6 +57,7 @@ class TrainingConfig:
     device: torch.device = field(default_factory=lambda: get_device())
     dataset_root_dir: str = DATASET_BASE_DIR
     use_wandb: bool = False
+    n_checkpoints: int = 1
     hyperparameters: Hyperparameters = field(default_factory=Hyperparameters)
 
     def __post_init__(self):
@@ -75,6 +76,12 @@ class TrainingConfig:
 
             self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
             self.hyperparameters.accumulation_steps = accumulation_steps
+        
+        # determine epochs to save model based on number of checkpoints
+        save_every = self.hyperparameters.n_epochs // self.n_checkpoints
+        checkpoint_epochs = [save_every * i for i in range(1, self.n_checkpoints + 1)]
+        checkpoint_epochs[-1] = self.hyperparameters.n_epochs
+        self.checkpoints = checkpoint_epochs
 
     def flatten(self):
         return {

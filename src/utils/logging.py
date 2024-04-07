@@ -8,10 +8,12 @@ from typing import Dict
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+import torch
 
 from src.utils.config import TrainingConfig
 
 LOGS_DIR = pathlib.Path(__file__).parent.parent.parent / "logs"
+MODELS_DIR = pathlib.Path(__file__).parent.parent.parent / "model_registry"
 
 class LoggerMixin:
     def __init__(self, config: TrainingConfig):
@@ -45,6 +47,15 @@ class LoggerMixin:
         - step (int): the step number to log the metrics at
         """
         raise NotImplementedError("Method 'log_metrics' not implemented.")
+    
+    def save_model(self, id: str, model: torch.nn.Module):
+        """
+        Save the model to the logger
+
+        Args:
+        - path (pathlib.Path): the path to save the model to
+        """
+        raise NotImplementedError("Method 'save_model' not implemented.")
 
     def plot_metrics(self):
         """
@@ -82,9 +93,10 @@ class WandbLogger(LoggerMixin):
         self.run.save(str(path)) # Save the model to wandb
     
 class LocalLogger(LoggerMixin):
-    def __init__(self, config: TrainingConfig, run_group: str = None):
+    def __init__(self, config: TrainingConfig, run_group: str = None, checkpointing: bool = False):
         super().__init__(config)
         self.metrics = {}
+        self.checkpointing = checkpointing
 
         self.run_group = "_".join(run_group.split()) if run_group else 'Experiment'
 
@@ -106,6 +118,12 @@ class LocalLogger(LoggerMixin):
         self.log_dir = self.save_dir / run_id
         self.log_dir.mkdir(exist_ok=True)
 
+        if self.checkpointing:
+            self.model_dir = MODELS_DIR / self.run_group if self.run_group else MODELS_DIR
+            self.model_dir.mkdir(exist_ok=True)
+            self.model_dir = self.model_dir / run_id
+            self.model_dir.mkdir(exist_ok=True)
+
     def finish(self):
         # save the metrics to a file
         with open(self.log_dir / "metrics.json", "w") as f: # should this be a csv file?
@@ -115,7 +133,9 @@ class LocalLogger(LoggerMixin):
         if step is None:
             step = len(self.metrics) + 1
         self.metrics[step] = metrics
-
+    
+    def save_model(self, model_id: str, model: torch.nn.Module):
+        torch.save(model.state_dict(), self.model_dir / f"{model_id}.pth")
     
     def plot_metrics(self):
         metrics_df = pd.DataFrame(self.metrics).T
