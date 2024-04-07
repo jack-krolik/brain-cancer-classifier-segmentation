@@ -4,6 +4,8 @@ import pathlib
 
 DATASET_BASE_DIR = pathlib.Path(__file__).parent.parent.parent / 'datasets'
 
+CUDA_SAFE_BATCH_SIZE = 4 # NOTE: This is the maximum batch size that can be used on my 3070 GPU (This value is hardcoded for now but should be made dynamic in the future)
+
 def get_device():
     """
     Get the device to use for training (cuda if available, then mps, then cpu)
@@ -22,6 +24,7 @@ class Hyperparameters:
     batch_size: int = 1
     learning_rate: float = 0.01
     n_epochs: int = 10
+    accumulation_steps: int = 1 # Gradient accumulation
     additional_params: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -36,6 +39,7 @@ class Hyperparameters:
             "n_epochs": self.n_epochs,
             "optimizer": self.optimizer,
             "loss_fn": self.loss_fn,
+            'accumulation_steps': self.accumulation_steps,
             **self.additional_params
         }
 
@@ -47,11 +51,36 @@ class TrainingConfig:
     random_state: int = 42
     device: torch.device = field(default_factory=lambda: get_device())
     dataset_root_dir: str = DATASET_BASE_DIR
-    disable_wandb: bool = False
+    use_wandb: bool = False
     hyperparameters: Hyperparameters = field(default_factory=Hyperparameters)
 
     def __post_init__(self):
         assert pathlib.Path(self.dataset_root_dir).exists(), f"Dataset root directory {self.dataset_root_dir} does not exist"
         assert self.n_folds > 0, "Number of folds must be greater than 0"
+
+        batch_size = self.hyperparameters.batch_size
+
+        # check if device is cuda 
+        if self.device.type == 'cuda' and batch_size > CUDA_SAFE_BATCH_SIZE:
+            accumulation_steps = ((batch_size + CUDA_SAFE_BATCH_SIZE - 1) // CUDA_SAFE_BATCH_SIZE)
+            print(f"""
+            Batch size {batch_size} is too large for the current device. 
+            Splitting the batch into {accumulation_steps} steps of {CUDA_SAFE_BATCH_SIZE} samples each.
+            """)
+
+            self.hyperparameters.batch_size = CUDA_SAFE_BATCH_SIZE
+            self.hyperparameters.accumulation_steps = accumulation_steps
+
+    def flatten(self):
+        return {
+            "architecture": self.architecture,
+            "dataset": self.dataset,
+            "n_folds": self.n_folds,
+            "random_state": self.random_state,
+            "device": self.device,
+            "dataset_root_dir": self.dataset_root_dir,
+            "use_wandb": self.use_wandb,
+            **self.hyperparameters.to_dict()
+        }
 
             

@@ -1,6 +1,4 @@
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
 
 
 def show_images_with_masks(images: list, masks: list, nmax: int = 4) -> None:

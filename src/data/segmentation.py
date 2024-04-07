@@ -77,14 +77,19 @@ class LGGSegmentationDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
+        mask, image = self._get_image_mask(idx)
+
+        if self.transform:
+            image, mask = self.transform(image, mask)
+
+        return image, mask
+    
+    def _get_image_mask(self, idx: int):
         row = self.data.iloc[idx]
         image_path = self.root_dir / row['ID'] / row['Image']
         mask_path = self.root_dir / row['ID'] / row['Mask']
 
         image = Image.open(image_path)
         mask = Image.open(mask_path)
-
-        if self.transform:
-            image, mask = self.transform(image, mask)
 
         return image, mask
