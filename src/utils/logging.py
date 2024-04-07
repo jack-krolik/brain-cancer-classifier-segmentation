@@ -48,7 +48,7 @@ class LoggerMixin:
         """
         raise NotImplementedError("Method 'log_metrics' not implemented.")
     
-    def save_model(self, id: str, model: torch.nn.Module):
+    def save_model(self, model: torch.nn.Module, id: str):
         """
         Save the model to the logger
 
@@ -134,7 +134,7 @@ class LocalLogger(LoggerMixin):
             step = len(self.metrics) + 1
         self.metrics[step] = metrics
     
-    def save_model(self, model_id: str, model: torch.nn.Module):
+    def save_model(self, model: torch.nn.Module, model_id: str):
         torch.save(model.state_dict(), self.model_dir / f"{model_id}.pth")
     
     def plot_metrics(self):
@@ -155,5 +155,4 @@ class LocalLogger(LoggerMixin):
         fig.update_layout(title='Metrics', xaxis_title='Epoch', yaxis_title='Value')
         fig.write_html(str(self.log_dir / "metrics.html"))
         fig.show()
-
         
