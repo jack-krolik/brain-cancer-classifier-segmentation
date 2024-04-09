@@ -1,18 +1,21 @@
 import os
-import torch
 import json
 import numpy as np
 from PIL import Image, ImageDraw
 from torch.utils.data import Dataset
+import pathlib
+import pandas as pd
 
 from src.enums import DataSplit
 
-class TumorSemanticSegmentationDataset(Dataset):
-    def __init__(self, root_dir, split: DataSplit, transform=None):
-        self.root_dir = os.path.join(root_dir, 'tumor-segmentation', split.lower())
+class BoxSegmentationDataset(Dataset):
+    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform=None):
+        self.root_dir = root_dir / 'tumor-segmentation-boxes' / split.lower()
         self.transform = transform
          # Load annotations
-        with open(os.path.join(self.root_dir, '_annotations.coco.json'), 'r') as file:
+
+        annotations_path = self.root_dir / '_annotations.coco.json'
+        with open(annotations_path, 'r') as file:
             self.labels = json.load(file)
 
         # Map image IDs to file names
@@ -61,3 +64,32 @@ class TumorSemanticSegmentationDataset(Dataset):
         for annotation in annotations:
             ImageDraw.Draw(mask).polygon(annotation['segmentation'], outline=255, fill=255) # Draw the polygon
         return mask
+
+class LGGSegmentationDataset(Dataset):
+    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform=None):
+        self.root_dir = root_dir / 'lgg-mri-segmentation' / split.lower()
+        self.split = split
+        self.transform = transform
+
+        self.data = pd.read_csv(self.root_dir / f"{split}.csv")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image, mask = self._get_image_mask(idx)
+
+        if self.transform:
+            image, mask = self.transform(image, mask)
+
+        return image, mask
+    
+    def _get_image_mask(self, idx: int):
+        row = self.data.iloc[idx]
+        image_path = self.root_dir / row['ID'] / row['Image']
+        mask_path = self.root_dir / row['ID'] / row['Mask']
+
+        image = Image.open(image_path)
+        mask = Image.open(mask_path)
+
+        return image, mask

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 torch.set_printoptions(precision=3, edgeitems=40, linewidth=120, sci_mode=False)
 
+from src.data.classification import DataSplit
 from src.models.segmentation.unet import UNet
 from src.data.classification import TumorBinaryClassificationDataset
 from src.utils.visualize import show_images_with_masks
@@ -225,10 +226,14 @@ def main():
 
     # Create Segmentation Dataset instance
     train_dataset = TumorBinaryClassificationDataset(
-        root_dir=config.dataset_root_dir, split="train", transform=base_transforms
+        root_dir=config.dataset_root_dir,
+        split=DataSplit.TRAIN,
+        transform=base_transforms,
     )
     test_dataset = TumorBinaryClassificationDataset(
-        root_dir=config.dataset_root_dir, split="test", transform=base_transforms
+        root_dir=config.dataset_root_dir,
+        split=DataSplit.TEST,
+        transform=base_transforms,
     )
 
     print(f"Train dataset length: {len(train_dataset)}")
