@@ -4,6 +4,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from src.data.classification import TumorBinaryClassificationDataset, DataSplit
+import torchmetrics
+from torchmetrics.classification import (
+    BinaryAccuracy,
+    BinaryAUROC,
+    BinaryF1Score,
+    BinaryPrecision,
+    BinaryRecall,
+    BinaryJaccardIndex,
+)
 
 
 DIM = 256
@@ -63,6 +72,17 @@ train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+metrics = torchmetrics.MetricCollection(
+    [
+        BinaryAUROC().to(device),
+        BinaryJaccardIndex().to(device),
+        BinaryAccuracy().to(device),
+        BinaryF1Score().to(device),
+        BinaryPrecision().to(device),
+        BinaryRecall().to(device),
+    ]
+)
 model = ClassificationCNN().to(device)
 criterion = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01, weight_decay=0.001)
@@ -90,12 +110,15 @@ with torch.no_grad():
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
         predicted = (outputs.data > 0.5).float()  # Using 0.5 as the threshold
+        computed_metrics = metrics(predicted.squeeze(), labels)
         total += labels.size(0)
         correct += (predicted.view(-1) == labels).sum().item()
 
-    accuracy = 100 * correct / total
-    print(f"Accuracy of the model on test images: {accuracy}%")
+    total_metrics = metrics.compute()
+    print(f"Validation Metrics: ", total_metrics)
 
 """
 20 epochs, 99.6186117467582% accuracy!!! First try
+
+Validation Metrics:  {'BinaryAUROC': tensor(0.9967, device='cuda:0'), 'BinaryJaccardIndex': tensor(0.9934, device='cuda:0'), 'BinaryAccuracy': tensor(0.9954, device='cuda:0'), 'BinaryF1Score': tensor(0.9967, device='cuda:0'), 'BinaryPrecision': tensor(1., device='cuda:0'), 'BinaryRecall': tensor(0.9934, device='cuda:0')}
 """

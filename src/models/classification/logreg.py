@@ -2,6 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torchmetrics
+from torchmetrics.classification import (
+    BinaryAccuracy,
+    BinaryAUROC,
+    BinaryF1Score,
+    BinaryPrecision,
+    BinaryRecall,
+    BinaryJaccardIndex,
+)
 from torchvision import transforms
 from src.data.classification import TumorBinaryClassificationDataset, DataSplit
 
@@ -16,6 +25,7 @@ transform = transforms.Compose(
         ),  # stats come from ImageNet
     ]
 )
+
 
 train_dataset = TumorBinaryClassificationDataset(
     root_dir="datasets/",
@@ -49,11 +59,22 @@ class LogisiticRegression(nn.Module):
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+metrics = torchmetrics.MetricCollection(
+    [
+        BinaryAUROC().to(device),
+        BinaryJaccardIndex().to(device),
+        BinaryAccuracy().to(device),
+        BinaryF1Score().to(device),
+        BinaryPrecision().to(device),
+        BinaryRecall().to(device),
+    ]
+)
 model = LogisiticRegression().to(device)
 criterion = nn.BCELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01, weight_decay=0.001)
 
-num_epochs = 10
+num_epochs = 15
 for epoch in range(num_epochs):
     model.train()
     for images, labels in train_loader:
@@ -77,10 +98,11 @@ with torch.no_grad():
         outputs = model(images)
         predicted = (outputs.data > 0.5).float()  # Using 0.5 as the threshold
         total += labels.size(0)
+        computed_metrics = metrics(predicted.squeeze(), labels)
         correct += (predicted.view(-1) == labels).sum().item()
 
-    accuracy = 100 * correct / total
-    print(f"Accuracy of the model on test images: {accuracy}%")
+    total_metrics = metrics.compute()
+    print(f"Validation Metrics: ", total_metrics)
 
 """
 WRONG:
@@ -90,4 +112,7 @@ CORRECT:
 I actually forgot to choose the test set to validate one lmao.
 
 Accuracy for 10 epochs was 84%. Can probably get better.
+
+Final Metrics Binary:
+   Validation Metrics:  {'BinaryAUROC': tensor(0.5069, device='cuda:0'), 'BinaryJaccardIndex': tensor(0.6935, device='cuda:0'), 'BinaryAccuracy': tensor(0.6949, device='cuda:0'), 'BinaryF1Score': tensor(0.8190, device='cuda:0'), 'BinaryPrecision': tensor(0.6940, device='cuda:0'), 'BinaryRecall': tensor(0.9989, device='cuda:0')} 
 """

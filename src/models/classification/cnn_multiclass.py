@@ -4,6 +4,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from src.data.classification import TumorClassificationDataset, DataSplit
+import torchmetrics
+from torchmetrics.classification import (
+    MulticlassAccuracy,
+    MulticlassAUROC,
+    MulticlassF1Score,
+    MulticlassPrecision,
+    MulticlassRecall,
+    MulticlassJaccardIndex,
+)
 
 
 DIM = 256
@@ -63,6 +72,27 @@ train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+soft_metrics = torchmetrics.MetricCollection(
+    [
+        MulticlassAUROC(4).to(device),
+        MulticlassJaccardIndex(4).to(device),
+        MulticlassAccuracy(4).to(device),
+        MulticlassF1Score(4).to(device),
+        MulticlassPrecision(4).to(device),
+        MulticlassRecall(4).to(device),
+    ]
+)
+onehot_metrics = torchmetrics.MetricCollection(
+    [
+        MulticlassAUROC(4).to(device),
+        MulticlassJaccardIndex(4).to(device),
+        MulticlassAccuracy(4).to(device),
+        MulticlassF1Score(4).to(device),
+        MulticlassPrecision(4).to(device),
+        MulticlassRecall(4).to(device),
+    ]
+)
 model = ClassificationMulticlassCNN().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01, weight_decay=0.001)
@@ -90,13 +120,23 @@ with torch.no_grad():
     for images, labels in test_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
+        probs = F.softmax(outputs, dim=1).to(torch.float32)
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
+        soft_computed_metrics = soft_metrics(probs, labels)
+        onehot_computed_metrics = onehot_metrics(
+            F.one_hot(predicted, num_classes=4).to(torch.float32), labels
+        )
         correct += (predicted == labels).sum().item()
 
-    accuracy = 100 * correct / total
-    print(f"Accuracy of the model on test images: {accuracy}%")
+    total_metrics_soft = soft_metrics.compute()
+    total_metrics_onehot = onehot_metrics.compute()
+    print(f"Validation Metrics Softmax: ", total_metrics_soft)
+    print(f"Validation Metrics Onehot: ", total_metrics_onehot)
 
 """
 20 epochs, 95.0419527078566% accuracy
+
+Validation Metrics Softmax:  {'MulticlassAUROC': tensor(0.9923, device='cuda:0'), 'MulticlassJaccardIndex': tensor(0.9045, device='cuda:0'), 'MulticlassAccuracy': tensor(0.9483, device='cuda:0'), 'MulticlassF1Score': tensor(0.9483, device='cuda:0'), 'MulticlassPrecision': tensor(0.9495, device='cuda:0'), 'MulticlassRecall': tensor(0.9483, device='cuda:0')}
+Validation Metrics Onehot:  {'MulticlassAUROC': tensor(0.9663, device='cuda:0'), 'MulticlassJaccardIndex': tensor(0.9045, device='cuda:0'), 'MulticlassAccuracy': tensor(0.9483, device='cuda:0'), 'MulticlassF1Score': tensor(0.9483, device='cuda:0'), 'MulticlassPrecision': tensor(0.9495, device='cuda:0'), 'MulticlassRecall': tensor(0.9483, device='cuda:0')}
 """
