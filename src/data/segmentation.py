@@ -77,7 +77,7 @@ class LGGSegmentationDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        mask, image = self._get_image_mask(idx)
+        image, mask = self._get_image_mask(idx)
 
         if self.transform:
             image, mask = self.transform(image, mask)
