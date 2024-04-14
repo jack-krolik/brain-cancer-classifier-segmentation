@@ -4,4 +4,5 @@ import torch
 class BinaryIoU(BinaryStatScores):
     def compute(self):
         tp, fp, _, fn = self._final_state()
-        return torch.true_divide(tp, tp + fp + fn)
+        iou = torch.true_divide(tp, tp + fp + fn)
+        return torch.nan_to_num(iou)
