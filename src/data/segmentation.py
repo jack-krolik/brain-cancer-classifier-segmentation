@@ -5,11 +5,12 @@ from PIL import Image, ImageDraw
 from torch.utils.data import Dataset
 import pathlib
 import pandas as pd
+from typing import Callable
 
 from src.enums import DataSplit
 
 class BoxSegmentationDataset(Dataset):
-    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform=None):
+    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform: Callable = None):
         self.root_dir = root_dir / 'tumor-segmentation-boxes' / split.lower()
         self.transform = transform
          # Load annotations
@@ -45,7 +46,7 @@ class BoxSegmentationDataset(Dataset):
     def __len__(self):
         return len(self.image_ids)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         image_id = self.image_ids[idx]
         img_path = os.path.join(self.root_dir, self.image_id_to_file_name[image_id])
         
@@ -66,12 +67,14 @@ class BoxSegmentationDataset(Dataset):
         return mask
 
 class LGGSegmentationDataset(Dataset):
-    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform=None):
+    def __init__(self, root_dir: pathlib.Path, split: DataSplit, transform: Callable = None, include_non_tumor: bool = False):
         self.root_dir = root_dir / 'lgg-mri-segmentation' / split.lower()
         self.split = split
         self.transform = transform
 
         self.data = pd.read_csv(self.root_dir / f"{split}.csv")
+        if not include_non_tumor:
+            self.data = self.data[self.data['Diagnosis'] == 1] # Only keep the positive examples
 
     def __len__(self):
         return len(self.data)

@@ -58,6 +58,22 @@ class UNet(nn.Module):
 
         self._init_weights()
     
+    @classmethod
+    def load(cls, path: str):
+        """
+        Load a model from a file.
+
+        Args:
+            path (str): The path to the file containing the model.
+
+        Returns:
+            UNet: The loaded model.
+        """
+        model = cls()
+        model.load_state_dict(torch.load(path))
+        return model
+
+    
     def forward(self, x):
         """
         Forward pass through the UNet model.

@@ -119,8 +119,8 @@ def get_train_config():
     additional_params = {"momentum": 0.99}
 
     if args.lr_scheduler is LRScheduler.StepLR:
-        additional_params["step_size"] = 10
-        additional_params["gamma"] = 0.5
+        additional_params["step_size"] = 20
+        additional_params["gamma"] = 0.1
 
     # TODO: add metrics to the configuration
     # create a training configuration
@@ -152,8 +152,6 @@ def main():
     else:
         logger = LocalLogger(training_config, run_group=f"Train Segmentation {training_config.architecture} {training_config.dataset} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", checkpointing=True)
     
-
-
     base_transforms = DualInputCompose(
         [DualInputResize((320, 320)), DualInputTransform(transforms.ToTensor())]
     )

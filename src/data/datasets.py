@@ -1,8 +1,11 @@
 from enum import auto, StrEnum
+from torchvision import transforms as T
 
 from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
 from src.utils.config import TrainingConfig
+from src.utils.transforms import ImgOnlyTransform
 
+LGG_NORMALIZE_TRANSFORM = T.Normalize(mean=[0.1047, 0.0965, 0.0985], std=[0.1201, 0.1200, 0.1225]) # See lgg_exploration.ipynb for why these values are derived
 
 class DatasetType(StrEnum):
     BOX = auto()
@@ -24,6 +27,10 @@ def prepare_datasets(config: TrainingConfig, transforms=None):
     # Define the augmentation pipeline for the dataset
 
     # NOTE: ALL AUGMENTATIONS SHOULD BE ADDED HERE
+    if transforms is None:
+        transforms = DualInputCompose(
+            [DualInputTransform(T.ToTensor())]
+        )
 
     if config.dataset == DatasetType.BOX:
         # Create Segmentation Dataset instance
@@ -38,6 +45,10 @@ def prepare_datasets(config: TrainingConfig, transforms=None):
             transform=transforms,
         )
     elif config.dataset == DatasetType.LGG:
+        normalize_transform = ImgOnlyTransform(LGG_NORMALIZE_TRANSFORM)
+        
+        transforms.add_transform(normalize_transform)
+
         # Create Segmentation Dataset instance
         train_dataset = LGGSegmentationDataset(
             root_dir=config.dataset_root_dir,
