@@ -58,6 +58,8 @@ class TrainingConfig:
     dataset_root_dir: str = DATASET_BASE_DIR
     use_wandb: bool = False
     n_checkpoints: int = 1
+    checkpoints: list = field(default_factory=list)
+    dynamic_batching: bool = True
     hyperparameters: Hyperparameters = field(default_factory=Hyperparameters)
 
     def __post_init__(self):
@@ -68,7 +70,7 @@ class TrainingConfig:
         batch_size = self.hyperparameters.batch_size
 
         # check if device is cuda 
-        if self.device.type == 'cuda' and batch_size > CUDA_SAFE_BATCH_SIZE:
+        if self.device.type == 'cuda' and batch_size > CUDA_SAFE_BATCH_SIZE and self.dynamic_batching:
             accumulation_steps = ((batch_size + CUDA_SAFE_BATCH_SIZE - 1) // CUDA_SAFE_BATCH_SIZE)
             print(f"""
             Batch size {batch_size} is too large for the current device. 
@@ -98,6 +100,7 @@ class TrainingConfig:
             
 class Optimizer(StrEnum):
     SGD = auto()
+    ADAM = auto()
 
     # class method to build optimizer with type, config, and model
     @classmethod
@@ -107,6 +110,12 @@ class Optimizer(StrEnum):
                 model.parameters(),
                 lr=config.hyperparameters.learning_rate,
                 momentum=config.hyperparameters.additional_params["momentum"],
+            )
+        elif optimizer_type == cls.ADAM:
+            return torch.optim.Adam(
+                model.parameters(),
+                lr=config.hyperparameters.learning_rate,
+                weight_decay=config.hyperparameters.additional_params.get("weight_decay", 0.0),
             )
         else:
             raise ValueError(f"Invalid optimizer: {config.hyperparameters.optimizer}")
