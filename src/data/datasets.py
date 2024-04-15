@@ -2,6 +2,7 @@ from enum import auto, StrEnum
 from torchvision import transforms as T
 
 from src.data.segmentation import BoxSegmentationDataset, LGGSegmentationDataset
+from src.data.classification import TumorBinaryClassificationDataset, TumorClassificationDataset
 from src.utils.config import TrainingConfig
 from src.utils.transforms import ImgOnlyTransform
 
@@ -10,6 +11,8 @@ LGG_NORMALIZE_TRANSFORM = T.Normalize(mean=[0.1047, 0.0965, 0.0985], std=[0.1201
 class DatasetType(StrEnum):
     BOX = auto()
     LGG = auto()
+    BINARY_CLASSIFICATION = auto()
+    MULTICLASS_CLASSIFICATION = auto()
     # Add more dataset types here
 
 
@@ -56,6 +59,30 @@ def prepare_datasets(config: TrainingConfig, transforms=None):
             transform=transforms,
         )
         test_dataset = LGGSegmentationDataset(
+            root_dir=config.dataset_root_dir,
+            split="test",
+            transform=transforms,
+        )
+    elif config.dataset == DatasetType.BINARY_CLASSIFICATION:
+        # Create Classification Dataset instance
+        train_dataset = TumorBinaryClassificationDataset(
+            root_dir=config.dataset_root_dir,
+            split="train",
+            transform=transforms,
+        )
+        test_dataset = TumorBinaryClassificationDataset(
+            root_dir=config.dataset_root_dir,
+            split="test",
+            transform=transforms,
+        )
+    elif config.dataset == DatasetType.MULTICLASS_CLASSIFICATION:
+        # Create Classification Dataset instance
+        train_dataset = TumorClassificationDataset(
+            root_dir=config.dataset_root_dir,
+            split="train",
+            transform=transforms,
+        )
+        test_dataset = TumorClassificationDataset(
             root_dir=config.dataset_root_dir,
             split="test",
             transform=transforms,

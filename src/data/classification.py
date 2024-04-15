@@ -3,8 +3,15 @@ import torch
 import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
+from torchvision import transforms
 
 from src.enums import DataSplit
+
+DIM = 256
+
+CLASSIFICATION_NORMALIZER = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )  # stats come from ImageNet
 
 class TumorClassificationDataset(Dataset):
     def __init__(self, root_dir, split: DataSplit, transform=None):

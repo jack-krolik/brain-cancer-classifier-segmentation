@@ -1,5 +1,22 @@
 from torch import nn
 
+class MultiResNetClassifier(nn.Module):
+    def __init__(self, num_classes:int):
+        super(MultiResNetClassifier, self).__init__()
+        # Load ResNet model
+        self.model = ResNet([2, 2, 2, 2], num_classes=num_classes)
+
+    def forward(self, x):
+        return self.model(x)
+
+class BinaryResNetClassifier(nn.Module):
+    def __init__(self):
+        super(BinaryResNetClassifier, self).__init__()
+        # Load ResNet model
+        self.model = ResNet([2, 2, 2, 2], num_classes=1)
+
+    def forward(self, x):
+        return self.model(x)
 
 
 class ResidualBlock(nn.Module):
@@ -82,12 +99,11 @@ class ResNet(nn.Module):
     ResNet class for image classification.
 
     Args:
-        block (nn.Module): The residual block module.
         layers (list): List of integers representing the number of residual blocks in each layer.
         num_classes (int, optional): Number of output classes. Defaults to 10.
     """
 
-    def __init__(self, block, layers, num_classes=10):
+    def __init__(self, layers, num_classes=10):
         super(ResNet, self).__init__()
         self.inplanes = 64
         self.conv1 = nn.Sequential(
@@ -96,14 +112,14 @@ class ResNet(nn.Module):
             nn.ReLU()  # ReLU activation function
         )
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)  # Max pooling layer with kernel size 3, stride 2, and padding 1
-        self.layer0 = self._make_layer(block, 64, layers[0], stride=1)  # First residual layer
-        self.layer1 = self._make_layer(block, 128, layers[1], stride=2)  # Second residual layer
-        self.layer2 = self._make_layer(block, 256, layers[2], stride=2)  # Third residual layer
-        self.layer3 = self._make_layer(block, 512, layers[3], stride=2)  # Fourth residual layer
+        self.layer0 = self._make_layer(64, layers[0], stride=1)  # First residual layer
+        self.layer1 = self._make_layer(128, layers[1], stride=2)  # Second residual layer
+        self.layer2 = self._make_layer(256, layers[2], stride=2)  # Third residual layer
+        self.layer3 = self._make_layer(512, layers[3], stride=2)  # Fourth residual layer
         self.avgpool = nn.AvgPool2d(7, stride=1)  # Average pooling layer with kernel size 7 and stride 1
         self.fc = nn.Linear(512, num_classes)  # Fully connected layer with 512 input features and num_classes output features
 
-    def _make_layer(self, block, planes, blocks, stride=1):
+    def _make_layer(self, planes, blocks, stride=1):
         """
         Helper method to create a residual layer.
 
@@ -123,10 +139,10 @@ class ResNet(nn.Module):
                 nn.BatchNorm2d(planes)  # Batch normalization layer for planes channels
             )
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(ResidualBlock(self.inplanes, planes, stride, downsample))
         self.inplanes = planes
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
+            layers.append(ResidualBlock(self.inplanes, planes))
 
         return nn.Sequential(*layers)
 

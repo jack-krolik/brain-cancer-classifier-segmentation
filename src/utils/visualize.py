@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import seaborn as sns
+import pandas as pd
+from sklearn.metrics import classification_report, confusion_matrix
 
 
 def show_images_with_masks(images: list, masks: list, nmax: int = 4) -> None:
@@ -159,3 +162,39 @@ def plot_semantic_predictions(images: list, masks: list, predictions: list, incl
     fig.suptitle("Images and Masks", fontsize=16, fontweight='bold')
     plt.tight_layout()
     plt.show()  
+
+
+def create_classification_results(y_true: list, y_pred: list, class_names: list) -> None:
+    """
+    Create a classification report and confusion matrix for a classification task.
+
+    Args:
+    - y_true: list of true labels
+    - y_pred: list of predicted labels
+    - class_names: list of class names
+
+    """
+    # Convert classification report to dictionary for seaborn heatmap
+    report_dict = classification_report(y_true, y_pred, target_names=class_names, output_dict=True)
+
+    # Plot the heatmap
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(pd.DataFrame(report_dict).iloc[:-1, :].T, annot=True, cmap="Blues", fmt=".2f", cbar=False)
+    plt.title('Classification Report')
+    plt.xlabel('Metrics')
+    plt.ylabel('Classes')
+    plt.show()
+
+    # Create a confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+
+    # Convert the confusion matrix to a DataFrame
+    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
+
+    # Create a heatmap from the DataFrame
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm_df, annot=True, cmap='Blues', fmt='g')
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.show()

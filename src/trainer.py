@@ -1,15 +1,107 @@
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
+import torch.nn.functional as F
 from torchmetrics import MetricCollection
 import pathlib
 from tqdm import tqdm
 from sklearn.model_selection import KFold
 from typing import Optional
+from argparse import Namespace
 
 from src.models.model_utils import build_model_from_config
 from src.utils.config import TrainingConfig
 from src.utils.logging import LoggerMixin
 
+# Classification:
+def eval_classification(model: torch.nn.Module, test_loader:DataLoader, metrics: MetricCollection, device, is_multiclass=True):
+    """
+    Evaluate the model on the test set using the given loss function and metrics.
+
+    NOTE: Assumes multi-class classification.
+
+    Args:
+        model: The model to evaluate
+        test_loader: DataLoader for the test set
+        metrics: Metrics to compute
+        device: Device to run the evaluation on
+        is_multiclass: Whether the classification is multi-class or binary
+    
+    Returns:
+        y_true: True labels
+        y_pred: Predicted labels
+        metrics: Computed metrics
+    """
+    model.eval()
+    metrics.reset()
+    y_true = []
+    y_pred = []
+    with torch.no_grad():
+        for images, labels in tqdm(test_loader):
+            images = images.to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            if is_multiclass:
+                outputs = F.softmax(outputs, dim=1)
+                _, predicted = torch.max(outputs, 1)
+            else:
+                outputs = F.sigmoid(outputs)
+                predicted = (outputs > 0.5).float().squeeze()
+            if not is_multiclass:
+                metrics(predicted, labels)
+            else:
+                metrics(outputs, labels)
+            y_true.extend(labels.cpu().numpy())
+            y_pred.extend(predicted.cpu().numpy())
+    total_metrics = metrics.compute()
+    metrics_str = '\n'.join([f'{k}: {v}' for k, v in total_metrics.items()])
+    print(f"Evaluation metrics: {metrics_str}")
+    return y_true, y_pred, total_metrics
+
+def train_classification(model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, device, n_epochs, is_multiclass=True, model_path: Optional[pathlib.Path] = None):
+    """
+    Train the model on the training set using the given optimizer and loss function.
+
+    Args:
+        model: The model to train
+        train_loader: DataLoader for the training set
+        optimizer: Optimizer to use
+        loss_fn: Loss function to use
+        device: Device to run the training on
+        n_epochs: Number of epochs to train for
+        is_multiclass: Whether the classification is multi-class or binary
+        model_path: Path to save the model at the end of training
+    
+    Returns:
+        Average loss
+    """
+    model.to(device)
+    model.train()
+    for epoch in range(n_epochs):
+        with tqdm(total=len(train_loader), desc=f"Epoch {epoch+1}/{n_epochs}", unit="batch") as pbar:
+            cumulative_loss = 0
+            for i, (images, labels) in enumerate(train_loader):
+                images = images.to(device)
+                labels = labels.to(device)
+                optimizer.zero_grad()
+                outputs = model(images)
+                if not is_multiclass:
+                    labels = labels.view(-1, 1).float()
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                cumulative_loss += (loss.item() - cumulative_loss) / (i + 1)
+                pbar.set_postfix({"Avg Train Loss": f"{cumulative_loss}", "Phase": "Train"})
+                pbar.update()
+            
+            print(f"Epoch {epoch+1}/{n_epochs}, Loss: {cumulative_loss}")
+    
+    if model_path is not None:
+        torch.save(model.state_dict(), model_path)
+    
+    return cumulative_loss
+
+
+# Segmentation:
 
 def run_training_and_evaluation_cycle(
     model: torch.nn.Module,
@@ -85,7 +177,7 @@ def train(
     train_dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: torch.nn.Module,
-    config: dict,
+    config: Namespace,
     device: torch.device,
     pbar: tqdm,
 ):
@@ -104,10 +196,10 @@ def train(
     model.train()
     cumulative_loss = 0
     optimizer.zero_grad()
-    for i, (imgs, masks) in enumerate(train_dataloader):
-        imgs, masks = imgs.to(device), masks.to(device)
+    for i, (imgs, labels) in enumerate(train_dataloader):
+        imgs, labels = imgs.to(device), labels.to(device)
         output = model(imgs)
-        loss = loss_fn(output, masks)
+        loss = loss_fn(output, labels)
         loss.backward()
         cumulative_loss += (loss.item() - cumulative_loss) / (i + 1)
 
@@ -117,8 +209,6 @@ def train(
 
         pbar.set_postfix({"Avg Train Loss": f"{cumulative_loss}", "Phase": "Train"})
         pbar.update()
-
-    # TODO: Add a scheduler to adjust learning rate
 
     return cumulative_loss
 
