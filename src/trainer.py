@@ -13,7 +13,7 @@ from src.utils.config import TrainingConfig
 from src.utils.logging import LoggerMixin
 
 # Classification:
-def eval_classification(model: torch.nn.Module, test_loader:DataLoader, loss_fn: torch.nn.Module, metrics: MetricCollection, device, is_multiclass=True):
+def eval_classification(model: torch.nn.Module, test_loader:DataLoader, metrics: MetricCollection, device, is_multiclass=True):
     """
     Evaluate the model on the test set using the given loss function and metrics.
 
@@ -22,9 +22,9 @@ def eval_classification(model: torch.nn.Module, test_loader:DataLoader, loss_fn:
     Args:
         model: The model to evaluate
         test_loader: DataLoader for the test set
-        loss_fn: The loss function to use
         metrics: Metrics to compute
         device: Device to run the evaluation on
+        is_multiclass: Whether the classification is multi-class or binary
     
     Returns:
         y_true: True labels
@@ -42,18 +42,22 @@ def eval_classification(model: torch.nn.Module, test_loader:DataLoader, loss_fn:
             outputs = model(images)
             if is_multiclass:
                 outputs = F.softmax(outputs, dim=1)
+                _, predicted = torch.max(outputs, 1)
             else:
                 outputs = F.sigmoid(outputs)
-            _, predicted = torch.max(outputs, 1)
+                predicted = (outputs > 0.5).float().squeeze()
             if not is_multiclass:
                 metrics(predicted, labels)
             else:
                 metrics(outputs, labels)
             y_true.extend(labels.cpu().numpy())
             y_pred.extend(predicted.cpu().numpy())
-    return y_true, y_pred, metrics.compute()
+    total_metrics = metrics.compute()
+    metrics_str = '\n'.join([f'{k}: {v}' for k, v in total_metrics.items()])
+    print(f"Evaluation metrics: {metrics_str}")
+    return y_true, y_pred, total_metrics
 
-def train_classification(model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, device, n_epochs):
+def train_classification(model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn: torch.nn.Module, device, n_epochs, is_multiclass=True, model_path: Optional[pathlib.Path] = None):
     """
     Train the model on the training set using the given optimizer and loss function.
 
@@ -64,6 +68,8 @@ def train_classification(model: torch.nn.Module, train_loader: DataLoader, optim
         loss_fn: Loss function to use
         device: Device to run the training on
         n_epochs: Number of epochs to train for
+        is_multiclass: Whether the classification is multi-class or binary
+        model_path: Path to save the model at the end of training
     
     Returns:
         Average loss
@@ -78,6 +84,8 @@ def train_classification(model: torch.nn.Module, train_loader: DataLoader, optim
                 labels = labels.to(device)
                 optimizer.zero_grad()
                 outputs = model(images)
+                if not is_multiclass:
+                    labels = labels.view(-1, 1).float()
                 loss = loss_fn(outputs, labels)
                 loss.backward()
                 optimizer.step()
@@ -86,6 +94,9 @@ def train_classification(model: torch.nn.Module, train_loader: DataLoader, optim
                 pbar.update()
             
             print(f"Epoch {epoch+1}/{n_epochs}, Loss: {cumulative_loss}")
+    
+    if model_path is not None:
+        torch.save(model.state_dict(), model_path)
     
     return cumulative_loss
 
