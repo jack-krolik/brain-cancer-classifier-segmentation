@@ -5,7 +5,6 @@ class MultiResNetClassifier(nn.Module):
         super(MultiResNetClassifier, self).__init__()
         # Load ResNet model
         self.model = ResNet([2, 2, 2, 2], num_classes=num_classes)
-        self.model.fc = nn.Linear(512, num_classes)  # Replace the last fully connected layer for multi-class classification
 
     def forward(self, x):
         return self.model(x)
@@ -14,8 +13,7 @@ class BinaryResNetClassifier(nn.Module):
     def __init__(self):
         super(BinaryResNetClassifier, self).__init__()
         # Load ResNet model
-        self.model = ResNet([2, 2, 2, 2], num_classes=2)
-        self.model.fc = nn.Linear(512, 2)  # Replace the last fully connected layer for binary classification
+        self.model = ResNet([2, 2, 2, 2], num_classes=1)
 
     def forward(self, x):
         return self.model(x)
