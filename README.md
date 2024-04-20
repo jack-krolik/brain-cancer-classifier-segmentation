@@ -67,6 +67,11 @@ For an example of how to load the classification dataset, see the `notebooks/dat
 
 ### Semantic Segmentation
 
+See `src/scripts/train_segmentation.py` for logic related to running segmentation experiments. For more info run the following from the root directory to see available training configurations:
+```bash
+python -m src.scripts.train_segmentation --help
+```
+
 ### Object Detection
 
 Navigate to the main function in src.scripts.train_object_detection.py and edit the `training_configs`.
