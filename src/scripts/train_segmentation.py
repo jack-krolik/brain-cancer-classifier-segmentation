@@ -100,12 +100,6 @@ def get_train_config():
     )
 
     parser.add_argument(
-        "--save_model",
-        action="store_true",
-        help="Flag to save the best model (default: False). If k-fold cross validation is used, only the best model will be saved per fold",
-    )
-
-    parser.add_argument(
         "--lr_scheduler",
         type=LRScheduler,
         help="Learning rate scheduler to use for training (default: None) (options: None, StepLR)",
