@@ -89,7 +89,7 @@ def get_train_config():
         "--dataset",
         type=DatasetType,
         default=DatasetType.BOX,
-        help="Dataset to use for training (default: box) (options: box, lgg)",
+        help='Dataset to use for training (default: box) (options: box, lgg, lgg_norm)',
     )
 
     parser.add_argument(

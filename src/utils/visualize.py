@@ -105,7 +105,7 @@ def plot_images_and_masks(
 
 
 def plot_semantic_predictions(
-    images: list, masks: list, predictions: list, include_overlay: bool = True
+          images: list, masks: list, predictions: list, include_overlay: bool = True, include_split: bool = True
 ) -> None:
     """
     Display a set of images, masks, and their corresponding predictions side by side. Optionally, overlay the mask and prediction on the image.
@@ -120,16 +120,13 @@ def plot_semantic_predictions(
     """
     assert len(images) == len(masks), "Number of images and masks should be the same"
 
-    n_rows = 5 if include_overlay else 3
+    n_rows = 1 + (include_overlay * 2) + (2 * include_split)
     n_samples = len(images)
 
     fig, axs = plt.subplots(n_rows, n_samples, figsize=(n_samples * 5, 5 * n_rows))
 
     for idx, (image, mask, pred) in enumerate(zip(images, masks, predictions)):
         image_ax = axs[0, idx]
-        mask_ax = axs[1, idx]
-        pred_ax = axs[2, idx]
-
         # Assuming images and masks are Tensors of shape [C, H, W]
         image_ax.imshow(image.permute(1, 2, 0).numpy(), cmap="gray")
         image_ax.set_title("Image", fontsize=12, fontweight="bold")
@@ -138,17 +135,22 @@ def plot_semantic_predictions(
         mask = mask.squeeze().numpy()
         pred = pred.squeeze().numpy()
 
-        mask_ax.imshow(mask, cmap="gray")
-        mask_ax.set_title("Mask", fontsize=12, fontweight="bold")
-        mask_ax.axis("off")
+        if include_split:
+            mask_ax = axs[1, idx]
+            pred_ax = axs[2, idx]
 
-        pred_ax.imshow(pred, cmap="gray")
-        pred_ax.set_title("Prediction", fontsize=12, fontweight="bold")
-        pred_ax.axis("off")
+            mask_ax.imshow(mask, cmap='gray')
+            mask_ax.set_title("Mask", fontsize=12, fontweight='bold')
+            mask_ax.axis('off')
+
+            pred_ax.imshow(pred, cmap='gray')
+            pred_ax.set_title("Prediction", fontsize=12, fontweight='bold')
+            pred_ax.axis('off')
 
         if include_overlay:
-            mask_pred_ax = axs[3, idx]
-            overlay_ax = axs[4, idx]
+            mask_pred_idx = 1 + (2 * include_split)
+            mask_pred_ax = axs[mask_pred_idx, idx]
+            overlay_ax = axs[mask_pred_idx + 1, idx]
             overlay_ax.imshow(image.permute(1, 2, 0).numpy())
             overlay_ax.imshow(mask, cmap="jet", alpha=0.5)
             overlay_ax.imshow(pred, cmap="jet", alpha=0.5)
