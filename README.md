@@ -4,9 +4,9 @@
 
 The datasets used in this project are available on Kaggle:
 
--   [Brain Tumor Image Dataset: Semantic Segmentation](https://www.kaggle.com/datasets/pkdarabi/brain-tumor-image-dataset-semantic-segmentation)
--   [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset)
--   [Brain MRI Segmentation Dataset](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
+- [Brain Tumor Image Dataset: Semantic Segmentation](https://www.kaggle.com/datasets/pkdarabi/brain-tumor-image-dataset-semantic-segmentation)
+- [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset)
+- [Brain MRI Segmentation Dataset](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
 
 ## Setup Instructions
 
@@ -60,3 +60,18 @@ Refer to the `notebooks/downloading_datasets.ipynb` notebook for step-by-step in
 ## Loading Classification Dataset
 
 For an example of how to load the classification dataset, see the `notebooks/dataloader_example.ipynb` notebook. This notebook demonstrates how to use the `TumorClassificationDataset` class to load either the Training or Testing split from the [Tumor Classification Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset).
+
+## Run Experiments:
+
+### Classification
+
+### Semantic Segmentation
+
+### Object Detection
+
+Navigate to the main function in src.scripts.train_object_detection.py and edit the `training_configs`.
+To run the specified experiment you can use...
+
+```bash
+python -m src.scripts.train_object_detection
+```
