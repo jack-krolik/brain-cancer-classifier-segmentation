@@ -95,17 +95,9 @@ class BBoxAnchorEncode:
         self.anchors = torch.tensor(np.array(anchors), requires_grad=False)
         self.anchor_corners = center_to_corners_bbox(self.anchors)
 
-        # saving all encodings to avoid computing each epoch
-        self.cache = {}
-
     def __call__(self, image, bbox):
 
         bbox = np.round(bbox, 1)
-        cache_key = str(bbox)
-
-        if cache_key in self.cache:
-            return image, self.cache[cache_key]
-
         bbox_corners = coco_to_corners_bbox(
             torch.tensor(np.array([bbox]), requires_grad=False)
         )
@@ -128,8 +120,6 @@ class BBoxAnchorEncode:
         targets[labels] = adjustment[labels]
 
         # This is the class of the anchor (tumor or no tumor)
-        labels = labels.to(torch.int32)
+        labels = labels.to(torch.float32)
 
-        self.cache[cache_key] = (labels, targets)
-
-        return image, (labels, targets)
+        return image, (labels, targets, bbox_center[0])

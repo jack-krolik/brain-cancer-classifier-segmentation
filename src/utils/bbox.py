@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from torchvision.ops import box_iou
+from sklearn.metrics import roc_auc_score
 
 
 def center_to_corners_bbox(bboxes):
@@ -40,33 +41,36 @@ def scale_anchors(unit_anchors, width, height):
     return anchors
 
 
-def generate_anchores(image_size, scales, aspect_ratios, feature_map_size):
+def generate_anchors(image_size, scales, aspect_ratios, feature_map_sizes):
+
     anchor_boxes_centers = []  # For center coordinates
     anchor_boxes_corners = []  # For corner coordinates
 
-    step_size = image_size / feature_map_size  # Size of one grid cell
+    for feature_map_size in feature_map_sizes:
 
-    for x in range(feature_map_size):
-        for y in range(feature_map_size):
-            center_x = (x + 0.5) * step_size
-            center_y = (y + 0.5) * step_size
+        step_size = image_size / feature_map_size  # Size of one grid cell
 
-            for scale in scales:
-                for aspect_ratio in aspect_ratios:
-                    box_height = image_size * scale / np.sqrt(aspect_ratio)
-                    box_width = image_size * scale * np.sqrt(aspect_ratio)
+        for x in range(feature_map_size):
+            for y in range(feature_map_size):
+                center_x = (x + 0.5) * step_size
+                center_y = (y + 0.5) * step_size
 
-                    # Center coordinates with width and height
-                    anchor_boxes_centers.append(
-                        [center_x, center_y, box_width, box_height]
-                    )
+                for scale in scales:
+                    for aspect_ratio in aspect_ratios:
+                        box_height = image_size * scale / np.sqrt(aspect_ratio)
+                        box_width = image_size * scale * np.sqrt(aspect_ratio)
 
-                    # Convert to corner coordinates
-                    x_min = center_x - box_width / 2
-                    y_min = center_y - box_height / 2
-                    x_max = center_x + box_width / 2
-                    y_max = center_y + box_height / 2
-                    anchor_boxes_corners.append([x_min, y_min, x_max, y_max])
+                        # Center coordinates with width and height
+                        anchor_boxes_centers.append(
+                            [center_x, center_y, box_width, box_height]
+                        )
+
+                        # Convert to corner coordinates
+                        x_min = center_x - box_width / 2
+                        y_min = center_y - box_height / 2
+                        x_max = center_x + box_width / 2
+                        y_max = center_y + box_height / 2
+                        anchor_boxes_corners.append([x_min, y_min, x_max, y_max])
 
     return np.array(anchor_boxes_centers), np.array(anchor_boxes_corners)
 
@@ -104,3 +108,42 @@ def non_maximum_supression(preds, bbox_centers, threshold, min_prob):
         indices = boxes_to_keep
 
     return selected_indices
+
+
+def calculate_dataset_iou(bboxes, predictions, scores):
+    """
+    bboxes: actual boxes in format center, width, height
+    predictions: predicted bounding boxes
+    scores: class_pred_bit of each predicted box
+
+    (429, 4) (108, 4092, 4) (429, 4092)
+    """
+
+    ious = []
+
+    for (
+        bbox,
+        score,
+        preds,
+    ) in zip(bboxes, scores, predictions):
+
+        # print(np.array(bbox).shape, np.array(score).shape, np.array(predictions).shape)
+
+        # get most confident box
+        best_box_idx = np.argmax(score)
+
+        best_pred_bbox = torch.tensor(preds[best_box_idx]).view((1, 4))
+        bbox = torch.tensor(bbox).view((1, 4))
+
+        best_pred_bbox = center_to_corners_bbox(best_pred_bbox)
+        bbox = center_to_corners_bbox(bbox)
+
+        # print(best_pred_bbox)
+        # print(bbox)
+
+        iou = box_iou(best_pred_bbox, bbox)[0, 0].item()
+
+        # print(best_box_idx, iou)
+        ious.append(iou)
+
+    return np.mean(ious)
