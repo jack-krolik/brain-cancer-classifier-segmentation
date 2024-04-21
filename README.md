@@ -4,9 +4,9 @@
 
 The datasets used in this project are available on Kaggle:
 
-- [Brain Tumor Image Dataset: Semantic Segmentation](https://www.kaggle.com/datasets/pkdarabi/brain-tumor-image-dataset-semantic-segmentation)
-- [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset)
-- [Brain MRI Segmentation Dataset](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
+-   [Brain Tumor Image Dataset: Semantic Segmentation](https://www.kaggle.com/datasets/pkdarabi/brain-tumor-image-dataset-semantic-segmentation)
+-   [Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset)
+-   [Brain MRI Segmentation Dataset](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
 
 ## Setup Instructions
 
@@ -65,9 +65,15 @@ For an example of how to load the classification dataset, see the `notebooks/dat
 
 ### Classification
 
+-   Logistic Regression - see `notebooks/logistic_regression.ipynb`
+-   CNN - see `notebooks/cnn_classification.ipynb`
+-   ResNet (binary) - see `notebooks/resnet.ipynb`
+-   ResNet (multi) - see `notebooks/resnet_multi.ipynb`
+
 ### Semantic Segmentation
 
 See `src/scripts/train_segmentation.py` for logic related to running segmentation experiments. For more info run the following from the root directory to see available training configurations:
+
 ```bash
 python -m src.scripts.train_segmentation --help
 ```
