@@ -74,7 +74,7 @@ python -m src.scripts.train_segmentation --help
 
 ### Object Detection
 
-Navigate to the main function in src.scripts.train_object_detection.py and edit the `training_configs`.
+Navigate to the `main` function in `src.scripts.train_object_detection.py` and edit the `training_configs`.
 To run the specified experiment you can use...
 
 ```bash
